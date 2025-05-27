@@ -24,16 +24,16 @@ test() {
 
 	_setup_nvmet
 
-	local ns
+	local nvmedev
 
 	_nvmet_target_setup
 
 	_nvme_connect_subsys
 
-	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+	nvmedev=$(_find_nvme_dev "${def_subsysnqn}")
 
-	if ! nvme smart-log "/dev/${ns}" >> "$FULL" 2>&1; then
-		echo "ERROR: smart-log bdev-ns failed"
+	if ! nvme smart-log "/dev/${nvmedev}" >> "$FULL" 2>&1; then
+		echo "ERROR: smart-log /dev/${nvmedev} failed"
 	fi
 
 	_nvme_disconnect_subsys >> "$FULL" 2>&1
