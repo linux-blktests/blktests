@@ -1,0 +1,167 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2022 Hannes Reinecke, SUSE Labs
+#
+# Test re-authentication with dhchap keys
+
+. tests/nvme/rc
+
+DESCRIPTION="Test re-authentication with dhchap keys"
+QUICK=1
+
+requires() {
+	_nvme_requires
+	_have_fio
+	_have_loop
+	_have_kernel_option NVME_AUTH
+	_have_kernel_option NVME_TARGET_AUTH
+	_require_kernel_nvme_fabrics_feature dhchap_ctrl_secret
+	_require_nvme_trtype_is_fabrics
+	_require_nvme_cli_auth
+	_have_driver dh_generic
+}
+
+set_conditions() {
+	_set_nvme_trtype "$@"
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	_setup_nvmet
+
+	local hostkey
+	local new_hostkey
+	local ctrlkey
+	local new_ctrlkey
+	local ctrldev
+	local rand_io_size
+	local ns
+
+	keyctl link %:.nvme @u
+
+	hostkey="$(nvme gen-dhchap-key -n "${def_subsysnqn}" --hmac=1 2> /dev/null)"
+	if [ -z "$hostkey" ] ; then
+		echo "failed to generate host key"
+		keyctl unlink %:.nvme
+		return 1
+	fi
+	hostkeydesc="$(uuidgen)"
+	if ! keyctl add dhchap ${hostkeydesc} ${hostkey} %:.nvme > /dev/null; then
+		echo "failed to add host key"
+		keyctl unlink %:.nvme
+		return 1
+	fi
+
+	ctrlkey="$(nvme gen-dhchap-key -n "${def_subsysnqn}" --hmac=1 2> /dev/null)"
+	if [ -z "$ctrlkey" ] ; then
+		echo "failed to generate ctrl key"
+		keyctl unlink %:.nvme
+		return 1
+	fi
+	ctrlkeydesc="$(uuidgen)"
+	if ! keyctl add dhchap ${ctrlkeydesc} ${ctrlkey} %:.nvme > /dev/null; then
+		keyctl revoke "%dhchap:${hostkeydesc}"
+		echo "failed to add ctrl key"
+		keyctl unlink %:.nvme
+		return 1
+	fi
+
+	_nvmet_target_setup --blkdev file --ctrlkey "${ctrlkeydesc}" \
+			    --hostkey "${hostkeydesc}"
+
+	_set_nvmet_dhgroup "${def_hostnqn}" "ffdhe2048"
+
+	_nvme_connect_subsys --dhchap-secret "${hostkeydesc}" \
+			     --dhchap-ctrl-secret "${ctrlkeydesc}"
+
+	echo "Re-authenticate with original host key"
+
+	ctrldev=$(_find_nvme_dev "${def_subsysnqn}")
+	if [ -z "$ctrldev" ] ; then
+		echo "nvme controller not found"
+	fi
+	hostkey_file="/sys/class/nvme/${ctrldev}/dhchap_secret"
+	echo -n "${hostkey}" > "${hostkey_file}"
+
+	echo "Renew host key on the controller"
+
+	new_hostkey="$(nvme gen-dhchap-key --nqn "${def_subsysnqn}" 2> /dev/null)"
+	if [ -z "$new_hostkey" ] ; then
+		echo "failed to generate new host key"
+		keyctl revoke "%dhchap:${ctrlkeydesc}"
+		keyctl revoke "%dhchap:${hostkeydesc}"
+		keyctl unlink %:.nvme
+		return 1
+	fi
+	new_hostkeydesc="$(uuidgen)"
+	if ! keyctl add dhchap ${new_hostkeydesc} ${new_hostkey} %:.nvme > /dev/null; then
+		echo "failed to add new host key"
+		keyctl revoke "%dhchap:${ctrlkeydesc}"
+		keyctl revoke "%dhchap:${hostkeydesc}"
+		keyctl unlink %:.nvme
+		return 1
+	fi
+	_set_nvmet_hostkey "${def_hostnqn}" "${new_hostkeydesc}"
+
+	echo "Re-authenticate with new host key"
+
+	echo -n "${new_hostkeydesc}" > "${hostkey_file}"
+	keyctl revoke "%dhchap:${hostkeydesc}"
+
+	echo "Renew ctrl key on the controller"
+
+	new_ctrlkey="$(nvme gen-dhchap-key --nqn "${def_subsysnqn}" 2> /dev/null)"
+	if [ -z "$new_ctrlkey" ]; then
+		echo "failed to generate new controller key"
+		keyctl revoke "%dhchap:${ctrlkeydesc}"
+		keyctl revoke "%dhchap:${new_hostkeydesc}"
+		keyctl unlink %:.nvme
+		return 1
+	fi
+	new_ctrlkeydesc="$(uuidgen)"
+	if ! keyctl add dhchap ${new_ctrlkeydesc} ${new_ctrlkey} %:.nvme > /dev/null; then
+		echo "failed to add new controller key"
+		keyctl revoke "%dhchap:${ctrlkeydesc}"
+		keyctl revoke "%dhchap:${new_hostkeydesc}"
+		keyctl unlink %:.nvme
+		return 1
+	fi
+	_set_nvmet_ctrlkey "${def_hostnqn}" "${new_ctrlkeydesc}"
+
+	echo "Re-authenticate with new ctrl key"
+
+	ctrlkey_file="/sys/class/nvme/${ctrldev}/dhchap_ctrl_secret"
+	echo -n "${new_ctrlkeydesc}" > "${ctrlkey_file}"
+	keyctl revoke "%dhchap:${ctrlkeydesc}"
+
+	echo "Change DH group to ffdhe8192"
+
+	_set_nvmet_dhgroup "${def_hostnqn}" "ffdhe8192"
+
+	echo "Re-authenticate with changed DH group"
+
+	echo -n "${new_hostkeydesc}" > "${hostkey_file}"
+
+	echo "Change hash to hmac(sha512)"
+
+	_set_nvmet_hash "${def_hostnqn}" "hmac(sha512)"
+
+	echo "Re-authenticate with changed hash"
+
+	echo -n "${new_hostkeydesc}" > "${hostkey_file}"
+
+	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+
+	rand_io_size="$(_nvme_calc_rand_io_size 4m)"
+	_run_fio_rand_io --size="${rand_io_size}" --filename="/dev/${ns}"
+
+	_nvme_disconnect_subsys
+	_nvmet_target_cleanup
+
+	keyctl revoke "%dhchap:${new_ctrlkeydesc}"
+	keyctl revoke "%dhchap:${new_hostkeydesc}"
+	keyctl unlink %:.nvme
+
+	echo "Test complete"
+}
