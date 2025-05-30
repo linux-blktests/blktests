@@ -183,6 +183,19 @@ _require_nvme_cli_tls() {
 	return 0
 }
 
+_require_nvme_support_ns_mgt() {
+	nn=$(nvme id-ctrl "$TEST_DEV" | grep ^nn | awk '{ print $3}')
+	if nvme id-ctrl -H "$TEST_DEV" | grep -q "NS Management and Attachment Not Supported"; then
+		SKIP_REASONS+=("$TEST_DEV doesn't support NS Management and Attachment")
+		return 1
+	elif [ "$nn" -eq 1 ]; then
+		SKIP_REASONS+=("$TEST_DEV supports NS Management and Attachmentm but nn=$nn")
+		return 1
+
+	fi
+	return 0
+}
+
 _require_kernel_nvme_fabrics_feature() {
 	local feature="$1"
 
