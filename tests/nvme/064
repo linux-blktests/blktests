@@ -1,0 +1,53 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2024 Hannes Reinecke (SUSE) <hare@suse.de>
+#
+# Test nvme fabrics controller ANA failover during I/O
+
+. tests/nvme/rc
+
+DESCRIPTION="test admin commands on disabled paths"
+
+requires() {
+	_nvme_requires
+	_have_loop
+	_have_fio
+	_require_nvme_trtype_is_fabrics
+}
+
+set_conditions() {
+	_set_nvme_trtype "$@"
+}
+
+test() {
+	local -a ports
+	local port
+	local ns
+
+	echo "Running ${TEST_NAME}"
+
+	_setup_nvmet
+
+	_nvmet_target_setup
+
+	_nvme_connect_subsys
+
+	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+	[ -z "${ns}" ] && return 1
+	nvme nvm-id-ctrl "/dev/${ns}"
+	nvme nvm-id-ns "/dev/${ns}"
+
+	# switch to ANA inaccessible
+	_get_nvmet_ports "${def_subsysnqn}" ports
+	for port in $ports; do
+		_setup_nvmet_port_ana "${port}" 1 "inaccessible"
+	done
+
+	nvme nvm-id-ctrl "/dev/${ns}"
+	nvme nvm-id-ns "/dev/${ns}" 2> /dev/null || true
+
+	_nvme_disconnect_subsys
+	_nvmet_target_cleanup
+
+	echo "Test complete"
+}
