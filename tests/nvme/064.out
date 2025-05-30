@@ -1,0 +1,13 @@
+Running nvme/064
+Re-authenticate with original host key
+Renew host key on the controller
+Re-authenticate with new host key
+Renew ctrl key on the controller
+Re-authenticate with new ctrl key
+Change DH group to ffdhe8192
+Re-authenticate with changed DH group
+Change hash to hmac(sha512)
+Re-authenticate with changed hash
+disconnected 1 controller(s)
+1 links removed
+Test complete
