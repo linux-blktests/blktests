@@ -1,0 +1,21 @@
+Running nvme/064
+NVMe Identify Controller NVM:
+vsl    : 0
+wzsl   : 0
+wusl   : 0
+dmrl   : 0
+dmrsl  : 0
+dmsl   : 0
+NVMe NVM Identify Namespace 1:
+lbstm : 0
+pic   : 0
+elbaf  0 : pif:0 sts:0  (in use)
+NVMe Identify Controller NVM:
+vsl    : 0
+wzsl   : 0
+wusl   : 0
+dmrl   : 0
+dmrsl  : 0
+dmsl   : 0
+disconnected 1 controller(s)
+Test complete
