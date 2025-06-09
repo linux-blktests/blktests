@@ -1,0 +1,68 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2025 Yi Zhang <yi.zhang@redhat.com>
+#
+# Test NVMe disk namespace management
+#
+
+. tests/nvme/rc
+
+DESCRIPTION="Test NVMe disk namespace management"
+QUICK=1
+CAN_BE_ZONED=1
+
+requires() {
+	_nvme_requires
+	_have_fio
+	_have_program jq
+}
+
+device_requires() {
+	_require_nvme_support_ns_mgt
+}
+
+test_device() {
+	echo "Running ${TEST_NAME}"
+
+	local ns_dev ctrl_dev nn tnvmcap lbaf lbads cntlid
+
+	ns_dev=${TEST_DEV##*/}
+	ctrl_dev=${ns_dev%n*}
+	nn=$(nvme id-ctrl --output-format=json /dev/"$ctrl_dev" | jq '.nn')
+	tnvmcap=$(nvme id-ctrl --output-format=json /dev/"$ctrl_dev" | jq '.tnvmcap')
+	flbas=$(nvme id-ns --output-format=json "$TEST_DEV" | jq '.flbas')
+	ds=$(nvme id-ns --output-format=json "$TEST_DEV" | jq ".lbafs[$flbas].ds")
+	lbads=$((2**ds))
+	cntlid=$(nvme id-ctrl --output-format=json /dev/"$ctrl_dev" | jq '.cntlid')
+	ns=$((tnvmcap/nn))
+	tnsze=$((tnvmcap/lbads))
+	nsze=$((ns/lbads))
+	nid=1
+
+	# Delete the namespace
+	nvme delete-ns "$TEST_DEV" >>"${FULL}" 2>&1
+	# Create nn-1 namespaces
+	while [ "$nid" -lt "$nn" ]; do
+		nvme create-ns /dev/"$ctrl_dev" --nsze="$nsze" --ncap="$nsze" --flbas="$flbas" >>"${FULL}" 2>&1
+		nvme attach-ns /dev/"$ctrl_dev" --namespace-id="$nid" --controllers="$cntlid" >>"${FULL}" 2>&1
+		((nid++))
+	done
+	# Create the $nn namespace
+	unvmcap=$(nvme id-ctrl --output-format=json  /dev/"$ctrl_dev" | jq '.tnvmcap')
+	nsze=$((unvmcap/lbads))
+	nvme create-ns /dev/"$ctrl_dev" --nsze="$nsze" --ncap="$nsze" --flbas="$flbas" >>"${FULL}" 2>&1
+	nvme attach-ns /dev/"$ctrl_dev" --namespace-id="$nid" --controllers="$cntlid" >>"${FULL}" 2>&1
+
+	# Delete all the namespace created
+	for ns in $(seq 1 "$nn"); do
+		nvme delete-ns /dev/"$ctrl_dev"n"$ns" >>"${FULL}" 2>&1
+	done
+
+	# Create the namespace with all the size
+	nvme create-ns /dev/"$ctrl_dev" --nsze="$tnsze" --ncap="$tnsze" --flbas="$flbas" >>"${FULL}" 2>&1
+	nvme attach-ns /dev/"$ctrl_dev" --namespace-id=1 --controllers="$cntlid" >>"${FULL}" 2>&1
+
+	udevadm settle
+
+	echo "Test complete"
+}
