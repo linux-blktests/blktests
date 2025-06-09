@@ -33,7 +33,7 @@ test() {
 	errors=$(_dmesg_since_test_start | grep -c "operation not supported error, dev .*WRITE_ZEROES")
 
 	losetup --detach "$loop_dev"
-	umount "$TMPDIR/tmpfs"
+	umount -l "$TMPDIR/tmpfs"
 
 	echo "Found $errors error(s) in dmesg"
 
