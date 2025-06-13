@@ -177,6 +177,7 @@ _run_fio() {
 		args+=("--runtime=$TIMEOUT")
 	fi
 
+	echo "fio ${args[*]} $*" >>"$FULL"
 	fio "${args[@]}" "$@"
 	local rc=$?
 	if [ $rc != 0 ]; then
@@ -219,20 +220,23 @@ _run_fio_verify_io() {
 }
 
 _fio_perf_report() {
-	# If there is more than one group, we don't know what to report.
-	if [[ $(wc -l < "$TMPDIR/fio_perf") -gt 1 ]]; then
-		echo "_fio_perf: too many terse lines" >&2
-		return
-	fi
+	local name field value_array
+	{
+		IFS=';' read -ra value_array
 
-	local name field value
+		# If there is more than one group, we don't know what to report.
+		if read -r; then
+			echo "_fio_perf: too many terse lines" >&2
+			return
+		fi
+	} <"$TMPDIR/fio_perf"
+
 	for name in "${FIO_PERF_FIELDS[@]}"; do
 		field="${FIO_TERSE_FIELDS["$name"]}"
 		if [[ -z $field ]]; then
 			echo "_fio_perf: unknown fio terse field '$name'" >&2
 			continue
 		fi
-		value="$(cut -d ';' -f "$field" "$TMPDIR/fio_perf")"
-		TEST_RUN["$FIO_PERF_PREFIX$name"]="$value"
+		TEST_RUN["$FIO_PERF_PREFIX$name"]=${value_array[$((field - 1))]}
 	done
 }

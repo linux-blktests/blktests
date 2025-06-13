@@ -37,14 +37,13 @@ _module_file_exists()
 	local ko_underscore=${1//-/_}.ko
 	local ko_hyphen=${1//_/-}.ko
 	local libpath
-	local -i count
 
 	libpath="/lib/modules/$(uname -r)/kernel"
 	[[ ! -d $libpath ]] && return 1
-	count=$(find "$libpath" -name "$ko_underscore*" -o \
-		     -name "$ko_hyphen*" | wc -l)
-	((count)) && return 0
-	return 1
+	local module_path
+	module_path="$(find "$libpath" -name "$ko_underscore*" -o \
+			-name "$ko_hyphen*")"
+	[ -n "${module_path}" ]
 }
 
 # Check that the specified module or driver is available, regardless of whether

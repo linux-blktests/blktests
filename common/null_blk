@@ -49,24 +49,29 @@ _init_null_blk() {
 
 # Configure one null_blk instance with name $1 and parameters $2..${$#}.
 _configure_null_blk() {
-	local nullb=/sys/kernel/config/nullb/$1 param val
+	local nullb_path=/sys/kernel/config/nullb/$1 params param
 	shift
 
 	if [[ ! -d /sys/module/null_blk ]]; then
 		modprobe -q null_blk
 	fi
 
-	mkdir "$nullb" || return $?
+	mkdir "$nullb_path" || return $?
 
+	params=()
 	if (( RUN_FOR_ZONED )); then
-		echo "1" > "$nullb/zoned" || return 1
+		params+=(zoned=1)
 	fi
+	params+=("$@")
 
-	while [[ $# -gt 0 ]]; do
-		param="${1%%=*}"
-		val="${1#*=}"
-		shift
-		echo "$val" > "$nullb/$param" || return 1
+	echo "$nullb_path ${params[*]}" >>"${FULL}"
+
+	for param in "${params[@]}"; do
+		local key="${param%%=*}" val="${param#*=}"
+		if ! echo "$val" > "$nullb_path/$key"; then
+			echo "Writing $val into $nullb_path/$key failed"
+			return 1
+		fi
 	done
 }
 
