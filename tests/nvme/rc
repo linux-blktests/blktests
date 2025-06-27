@@ -154,7 +154,7 @@ _require_test_dev_is_not_nvme_multipath() {
 }
 
 _test_dev_has_metadata() {
-	if (( ! $(<"${TEST_DEV_SYSFS}/metadata_bytes") )); then
+	if [ ! -e "${TEST_DEV_SYSFS}/metadata_bytes" ] || (( ! $(<"${TEST_DEV_SYSFS}/metadata_bytes") )); then
 		SKIP_REASONS+=("$TEST_DEV does not have metadata")
 		return 1
 	fi
