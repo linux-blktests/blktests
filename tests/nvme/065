@@ -1,0 +1,50 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2025 Yi Zhang <yi.zhang@redhat.com>
+#
+# Test nvme format NVMe disk with supported LBA format
+#
+
+. tests/nvme/rc
+
+DESCRIPTION="Test nvme format NVMe disk with supported LBA format"
+QUICK=1
+
+requires() {
+	_nvme_requires
+	_have_program jq
+}
+
+test_device() {
+	echo "Running ${TEST_NAME}"
+
+	local nlbaf olbaf clbaf
+	local iteration=10 i=0
+
+	olbaf=$(nvme id-ns "$TEST_DEV" | grep "in use" | awk '{print $2}')
+	nlbaf=$(nvme id-ns --output-format=json "$TEST_DEV" | jq '.nlbaf')
+
+	for lbaf in $(seq 0 "$nlbaf"); do
+		nvme format --lbaf="$lbaf" --force "$TEST_DEV" >> "${FULL}"
+		while (( i < iteration )); do
+			if [ ! -b "$TEST_DEV" ]; then
+				sleep 0.2
+				((i++))
+			else
+				break
+			fi
+		done
+
+		clbaf=$(nvme id-ns "$TEST_DEV" | grep "in use" | awk '{print $2}')
+		if [ "$clbaf" -ne "$lbaf" ]; then
+			echo "$TEST_DEV formatted to lbaf:$clbaf, expected:$lbaf"
+		fi
+	done
+
+	# Restore to the original lbaf
+	nvme format --lbaf="$olbaf" --force "$TEST_DEV" >> "${FULL}"
+
+	udevadm settle
+
+	echo "Test complete"
+}
