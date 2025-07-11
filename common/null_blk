@@ -73,6 +73,7 @@ _configure_null_blk() {
 			return 1
 		fi
 	done
+	udevadm settle
 }
 
 _exit_null_blk() {
