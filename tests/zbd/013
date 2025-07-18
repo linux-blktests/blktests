@@ -1,0 +1,118 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2025 Google LLC
+#
+# There is a bug in the Linux kernel 6.10..6.15 zoned block device code that
+# triggers a deadlock between zoned writes and queue freezing. This test
+# triggers that deadlock.
+
+. tests/zbd/rc
+. common/null_blk
+
+DESCRIPTION="test stacked drivers and queue freezing"
+TIMED=1
+
+requires() {
+	_have_driver dm-crypt
+	_have_driver null_blk
+	_have_fio
+	_have_program cryptsetup
+}
+
+# Trigger blk_mq_freeze_queue() repeatedly. "$1" must be a block device sysfs
+# attribute that triggers queue freezing. "$2" and "$3" are the values that will
+# be written into that sysfs attribute.
+queue_freeze_loop() {
+	while true; do
+		echo "$2" >"$1"
+		sleep .1
+		echo "$3" >"$1"
+		sleep .1
+	done
+}
+
+run_test() {
+	# A small conventional block device for the LUKS header.
+	local null_blk_params=(
+		blocksize=4096
+		completion_nsec=0
+		memory_backed=1
+		size=4            # MiB
+		submit_queues=1
+		power=1
+	)
+	_configure_null_blk nullb1 "${null_blk_params[@]}"
+	local hdev=/dev/nullb1
+
+	# A larger zoned block device for the data.
+	local null_blk_params=(
+		blocksize=4096
+		completion_nsec=1000000
+		irqmode=2
+		max_sectors=$(((1 << 32) - 1))
+		memory_backed=1
+		size=1024         # MiB
+		submit_queues=1
+		zoned=1
+		power=1
+	)
+	_configure_null_blk nullb2 "${null_blk_params[@]}"
+	local zdev_basename=nullb2
+	local zdev=/dev/${zdev_basename}
+
+	local luks_passphrase=this-passphrase-is-not-secret
+	{ echo "${luks_passphrase}" |
+		  cryptsetup luksFormat --batch-mode ${zdev} \
+			     --header ${hdev}; }
+	{ echo "${luks_passphrase}" |
+		  cryptsetup luksOpen \
+			     --batch-mode "${zdev}" "${luks_vol_name}" \
+			     --header ${hdev}; }
+	local luksdev="/dev/mapper/${luks_vol_name}"
+	local dmdev
+	dmdev="$(basename "$(readlink "${luksdev}")")"
+	ls -ld "${hdev}" "${zdev}" "${luksdev}" "/dev/${dmdev}" >>"${FULL}" 2>&1
+	local max_sectors_zdev
+	max_sectors_zdev=/sys/block/"${zdev_basename}"/queue/max_sectors_kb
+	echo 4 > "${max_sectors_zdev}"
+	echo "${zdev_basename}: max_sectors_kb=$(<"${max_sectors_zdev}")" >>"${FULL}"
+	queue_freeze_loop /sys/block/"$dmdev"/queue/read_ahead_kb 4 8 &
+	echo $! > "${loop_pid_filename}"
+	local fio_args=(
+		--bs=64M
+		--direct=1
+		--filename="${luksdev}"
+		--runtime="${TIMEOUT:-30}"
+		--time_based
+		--zonemode=zbd
+	)
+	_run_fio_verify_io "${fio_args[@]}" >>"${FULL}" 2>&1
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	_remove_null_blk_devices
+
+	local loop_pid_filename="${RESULTS_DIR}/${TEST_NAME}.loop_pid"
+	local luks_vol_name=zbd-013
+	(
+		set -e
+		run_test
+	)
+	# shellcheck disable=SC2181
+	(($? != 0)) && fail=true
+
+	local loop_pid
+	loop_pid="$(cat "${loop_pid_filename}" 2>/dev/null)"
+	kill "${loop_pid}"
+	cryptsetup luksClose "${luks_vol_name}"
+	_exit_null_blk
+
+	if [ -z "$fail" ]; then
+		echo "Test complete"
+	else
+		echo "Test failed"
+		return 1
+	fi
+}
