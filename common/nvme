@@ -907,6 +907,7 @@ _find_nvme_ns() {
 	local uuid
 	local ns
 
+	udevadm settle
 	for ns in "/sys/block/nvme"* ; do
 		# ignore nvme channel block devices
 		if ! [[ "${ns}" =~ nvme[0-9]+n[0-9]+ ]]; then
