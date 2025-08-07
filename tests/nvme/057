@@ -65,7 +65,7 @@ test() {
 	failback "${ports[@]}"
 
 	for port in "${ports[@]}"; do
-		_nvme_connect_subsys --port "${port}"
+		_nvme_connect_subsys --port "${port}" --no-wait-ns
 	done
 
 	# start fio job

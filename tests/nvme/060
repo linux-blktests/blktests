@@ -51,7 +51,7 @@ test() {
 	# The target reset is triggered with an even number timeout, while the
 	# host reconnects with an odd number timeout.
 	for ((i = 0; i <= 5; i++)); do
-		_nvme_connect_subsys --keep-alive-tmo 1 --reconnect-delay 1
+		_nvme_connect_subsys --keep-alive-tmo 1 --reconnect-delay 1 --no-wait-ns
 		sleep 3
 		_nvme_disconnect_subsys >> "$FULL" 2>&1
 	done
