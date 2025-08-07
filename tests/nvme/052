@@ -30,7 +30,7 @@ test() {
 
 	_nvmet_target_setup --blkdev none
 
-	_nvme_connect_subsys
+	_nvme_connect_subsys --no-wait-ns
 
 	for ((i = 1; i <= iterations; i++)); do
 		nsid=$((def_nsid + i - 1))
