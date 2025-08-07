@@ -81,7 +81,7 @@ test() {
 	_setup_ana "${ports[@]}"
 
 	for port in "${ports[@]}"; do
-		_nvme_connect_subsys --port "${port}"
+		_nvme_connect_subsys --port "${port}" --no-wait-ns
 	done
 
 	# Simulate unmap on one cluster node and remap to anther one

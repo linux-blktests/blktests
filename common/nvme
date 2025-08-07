@@ -284,6 +284,7 @@ _nvme_connect_subsys() {
 	local reconnect_delay=""
 	local ctrl_loss_tmo=""
 	local no_wait=false
+	local no_wait_ns=false
 	local hdr_digest=false
 	local data_digest=false
 	local tls=false
@@ -291,6 +292,7 @@ _nvme_connect_subsys() {
 	local port
 	local i
 	local -a ARGS
+	local ret=0
 
 	while [[ $# -gt 0 ]]; do
 		case $1 in
@@ -344,6 +346,10 @@ _nvme_connect_subsys() {
 				;;
 			--no-wait)
 				no_wait=true
+				shift 1
+				;;
+			--no-wait-ns)
+				no_wait_ns=true
 				shift 1
 				;;
 			--hdr-digest)
@@ -432,14 +438,23 @@ _nvme_connect_subsys() {
 	if [[ ${no_wait} = false ]]; then
 		local ctrldev
 
-		ctrldev=$(echo "${connect}"  | sed -n 's/.*device.:.\(nvme[0-9]*\)./\1/p')
+		ctrldev=$(echo "${connect}" | sed -n 's/.*device.:.\(nvme[0-9]*\)./\1/p')
 		udevadm settle
 		for ((i = 0; i < 10; i++)); do
-			_nvme_ctrl_ready "${ctrldev}" "${subsysnqn}" && return 0
+			_nvme_ctrl_ready "${ctrldev}" "${subsysnqn}" && break
 			sleep .1
 		done
-		return 1
+		[ $i -eq 10 ] && ret=1
+		if [[ ${no_wait_ns} = false ]]; then
+			for ((i = 0; i < 10; i++)); do
+				_nvme_dev_ready "${ctrldev}" && break
+				sleep .1
+			done
+			[ $i -eq 10 ] && ret=2
+		fi
+
 	fi
+	return "$ret"
 }
 
 _nvme_disconnect_subsys() {
@@ -471,6 +486,15 @@ _nvme_ctrl_ready() {
 	nqn=$(cat "${ctrlpath}/subsysnqn" 2> /dev/null)
 	if [[ "${nqn}" == "${subsysnqn}" &&
 		      -c /dev/${ctrldev} ]]; then
+		return 0
+	fi
+	return 1
+}
+
+_nvme_dev_ready() {
+	local ctrldev="${1}"
+
+	if [ -b /dev/"${ctrldev}"n1 ]; then
 		return 0
 	fi
 	return 1
