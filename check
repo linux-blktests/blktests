@@ -452,10 +452,14 @@ _call_test() {
 			}" "${seqres}.dmesg"
 			;;
 		esac
+
+		echo "$TEST_NAME" >> "$FAILURES"
 		return 1
-	else
-		return 0
+	elif [[ ${TEST_RUN["status"]} = 'not run' ]]; then
+		echo "$TEST_NAME" >> "$SKIPS"
 	fi
+
+	return 0
 }
 
 _test_dev_is_zoned() {
@@ -1040,5 +1044,16 @@ fi
 
 mkdir -p "$OUTPUT"
 OUTPUT="$(realpath "$OUTPUT")"
+FAILURES="$OUTPUT/failures"
+SKIPS="$OUTPUT/skips"
+rm -f "$FAILURES" "$SKIPS"
 
 _check "$@"
+
+declare -a failures skips
+declare l
+[[ -f $FAILURES ]] && while read -r l; do failures+=("$l"); done < "$FAILURES"
+((${#failures[@]})) && echo "${#failures[@]} failures: ${failures[*]}"
+
+[[ -f $SKIPS ]] && while read -r l; do skips+=("$l"); done < "$SKIPS"
+((${#skips[@]})) && echo "${#skips[@]} skips: ${skips[*]}"
