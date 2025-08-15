@@ -1,0 +1,71 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2025 Google LLC
+
+. tests/scsi/rc
+. common/null_blk
+. common/scsi_debug
+
+DESCRIPTION="test data lifetime propagation"
+QUICK=1
+
+requires() {
+	_have_fio
+	_have_driver f2fs
+	# See also commit 7643f3fe2772 ("f2fs: assign the write hint per stream
+	# by default"; v6.10).
+	_have_kver 6 10
+	_have_program mkfs.f2fs
+	_have_scsi_debug_group_number_stats
+}
+
+run_test() {
+	set -e
+
+	local scsi_debug_params=(
+		delay=0
+		dev_size_mb=1024
+		sector_size=4096
+	)
+	_configure_scsi_debug "${scsi_debug_params[@]}"
+	local dev="/dev/${SCSI_DEBUG_DEVICES[0]}" fail
+	ls -ld "${dev}" >>"${FULL}"
+	mkfs.f2fs "${dev}" >>"${FULL}" 2>&1
+	mkdir -p "${mount_dir}"
+	mount -t f2fs "${dev}" "${mount_dir}"
+	local fio_args=(
+		--size=1M
+		--directory="${mount_dir}"
+		--time_based
+		--runtime=10
+	)
+
+	set +e
+
+	_run_fio_verify_io "${fio_args[@]}" >>"${FULL}" 2>&1
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	# A global variable because it is also used in run_test().
+	mount_dir="$TMPDIR/mnt"
+
+	(
+		run_test
+	) || fail=true
+
+	umount "${mount_dir}" >>"${FULL}" 2>&1
+	head -n 999 /sys/bus/pseudo/drivers/scsi_debug/group_number_stats >> "${FULL}"
+	while read -r group count; do
+		if [ "$count" -gt 0 ]; then echo "$group"; fi
+	done < /sys/bus/pseudo/drivers/scsi_debug/group_number_stats
+	_exit_scsi_debug
+
+	if [ -z "$fail" ]; then
+		echo "Test complete"
+	else
+		echo "Test failed"
+		return 1
+	fi
+}
