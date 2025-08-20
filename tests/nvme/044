@@ -60,7 +60,7 @@ test() {
 	# and invalid ctrl authentication
 	echo "Test invalid ctrl authentication (should fail)"
 	_nvme_connect_subsys --dhchap-secret "${hostkey}" \
-			     --dhchap-ctrl-secret "${hostkey}"
+			     --dhchap-ctrl-secret "${hostkey}" --no-wait
 
 	_nvme_disconnect_subsys
 
@@ -77,7 +77,7 @@ test() {
 	echo "Test invalid ctrl key (should fail)"
 	invkey="DHHC-1:00:Jc/My1o0qtLCWRp+sHhAVafdfaS7YQOMYhk9zSmlatobqB8C:"
 	_nvme_connect_subsys --dhchap-secret "${hostkey}" \
-			     --dhchap-ctrl-secret "${invkey}"
+			     --dhchap-ctrl-secret "${invkey}" --no-wait
 
 	_nvme_disconnect_subsys
 
