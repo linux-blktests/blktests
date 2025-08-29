@@ -544,9 +544,37 @@ _systemctl_stop() {
 	done
 }
 
-_drain_udev_events() {
+_systemctl_unit_is_active() {
+	local unit="$1"
+
 	if command -v systemctl &>/dev/null &&
-			systemctl is-active --quiet systemd-udevd; then
+			systemctl is-active --quiet "$unit"; then
+		return 0
+	fi
+	return 1
+}
+
+_systemd_stop_udevd() {
+	if _systemctl_unit_is_active "systemd-udevd"; then
+		systemctl --quiet stop systemd-udevd
+		systemctl --quiet mask systemd-udevd
+	fi
+}
+
+_systemd_start_udevd() {
+	if ! _systemctl_unit_is_active "systemd-udevd"; then
+		systemctl --quiet unmask systemd-udevd
+		systemctl --quiet start systemd-udevd
+	fi
+	if ! _systemctl_unit_is_active "systemd-udevd"; then
+		echo "WARNING: systemd-udevd not started"
+		return 1
+	fi
+	return 0
+}
+
+_drain_udev_events() {
+	if !  _systemctl_unit_is_active "systemd-udevd"; then
 		systemctl restart systemd-udevd.service
 	else
 		udevadm settle --timeout=900
