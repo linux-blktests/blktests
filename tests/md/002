@@ -73,12 +73,12 @@ test() {
 	for raid_level in 0 1 10; do
 		if [ "$raid_level" = 10 ]
 		then
-			echo y | mdadm --create /dev/md/blktests_md --level=$raid_level \
-				--raid-devices=4 --force /dev/"${scsi_0}" /dev/"${scsi_1}" \
+			mdadm --create /dev/md/blktests_md --level=$raid_level \
+				--raid-devices=4 --force --run /dev/"${scsi_0}" /dev/"${scsi_1}" \
 				/dev/"${scsi_2}" /dev/"${scsi_3}" 2> /dev/null 1>&2
 		else
-			echo y | mdadm --create /dev/md/blktests_md --level=$raid_level \
-				--raid-devices=2 --force \
+			mdadm --create /dev/md/blktests_md --level=$raid_level \
+				--raid-devices=2 --force --run \
 				/dev/"${scsi_0}" /dev/"${scsi_1}" 2> /dev/null 1>&2
 		fi
 
@@ -214,12 +214,12 @@ test() {
 
 			if [ "$raid_level" = 0 ]
 			then
-				echo y | mdadm --create /dev/md/blktests_md --level=$raid_level \
-					--raid-devices=2 --chunk="${md_chunk_size}"K --force \
+				mdadm --create /dev/md/blktests_md --level=$raid_level \
+					--raid-devices=2 --chunk="${md_chunk_size}"K --force --run \
 					/dev/"${scsi_0}" /dev/"${scsi_1}" 2> /dev/null 1>&2
 			else
-				echo y | mdadm --create /dev/md/blktests_md --level=$raid_level \
-					--raid-devices=4 --chunk="${md_chunk_size}"K --force \
+				mdadm --create /dev/md/blktests_md --level=$raid_level \
+					--raid-devices=4 --chunk="${md_chunk_size}"K --force --run \
 					/dev/"${scsi_0}" /dev/"${scsi_1}" \
 					/dev/"${scsi_2}" /dev/"${scsi_3}" 2> /dev/null 1>&2
 			fi
