@@ -153,6 +153,20 @@ _require_test_dev_is_not_nvme_multipath() {
 	return 0
 }
 
+_require_test_dev_support_sed() {
+	if ! nvme sed discover "$TEST_DEV" &> /dev/null; then
+		SKIP_REASONS+=("$TEST_DEV doesn't support SED operations")
+		return 1
+	fi
+	if nvme sed discover "$TEST_DEV" | grep -q "Locking Supported.*: no"; then
+		SKIP_REASONS+=("$TEST_DEV doesn't support SED operations")
+		return 1
+	fi
+	if nvme sed discover "$TEST_DEV" | grep -q "Locking Supported.*: yes"; then
+		return 0
+	fi
+}
+
 _test_dev_has_metadata() {
 	if [ ! -e "${TEST_DEV_SYSFS}/metadata_bytes" ] || \
 		   (( ! $(<"${TEST_DEV_SYSFS}/metadata_bytes") )); then
@@ -211,6 +225,14 @@ _require_nvme_cli_auth() {
 _require_nvme_cli_tls() {
 	if ! nvme gen-tls-key --subsysnqn nvmf-test-subsys > /dev/null 2>&1; then
 		SKIP_REASONS+=("nvme gen-tls-key command missing")
+		return 1
+	fi
+	return 0
+}
+
+_require_nvme_cli_sed() {
+	if ! nvme sed help &> /dev/null; then
+		SKIP_REASONS+=("nvme doesn't support sed plugin")
 		return 1
 	fi
 	return 0

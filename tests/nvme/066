@@ -1,0 +1,172 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2025 Yi Zhang <yi.zhang@redhat.com>
+#
+# Test NVMe SED (Self-Encrypting Drive) operations
+# including discover, initialize, lock/unlock, password change and revert
+#
+
+. tests/nvme/rc
+
+DESCRIPTION="test NVMe SED operations"
+QUICK=1
+
+# SED test passwords
+SED_PASSWORD="password"
+SED_NEW_PASSWORD="PASSWORD"
+
+requires() {
+	_nvme_requires
+	_have_program expect
+	_have_program nvme
+	_require_nvme_cli_sed
+}
+
+device_requires() {
+	_require_test_dev_is_nvme
+	_require_test_dev_support_sed
+}
+
+nvme_sed_discover() {
+	local device=$1
+
+	nvme sed discover "$device"
+}
+
+nvme_sed_init() {
+	local device=$1
+
+	expect <<EOF
+		spawn nvme sed initialize $device
+		expect "New Password:"
+		send "$SED_PASSWORD\r"
+		expect "Re-enter New Password:"
+		send "$SED_PASSWORD\r"
+		expect eof
+EOF
+}
+
+nvme_sed_lock() {
+	local device=$1
+
+	nvme sed lock "$device"
+}
+
+nvme_sed_unlock() {
+	local device=$1
+
+	nvme sed unlock "$device"
+}
+
+nvme_sed_change_password() {
+	local device=$1
+
+	expect <<EOF
+		spawn nvme sed password $device
+		expect "Password:"
+		send "$SED_PASSWORD\r"
+		expect "New Password:"
+		send "$SED_NEW_PASSWORD\r"
+		expect "Re-enter New Password:"
+		send "$SED_NEW_PASSWORD\r"
+		expect eof
+EOF
+}
+
+nvme_sed_revert() {
+	local device=$1
+
+	expect <<EOF
+		spawn nvme sed revert $device
+		expect "Password:"
+		send "$SED_NEW_PASSWORD\r"
+		expect eof
+EOF
+}
+
+nvme_sed_revert_destructive() {
+	local device=$1
+
+	expect <<EOF
+		spawn nvme sed revert -e $device
+		expect "Destructive revert erases drive data. Continue (y/n)?"
+		send "y\r"
+		expect "Are you sure (y/n)?"
+		send "y\r"
+		expect "Password:"
+		send "$SED_PASSWORD\r"
+		expect eof
+EOF
+}
+
+test_device() {
+	echo "Running ${TEST_NAME}"
+
+	# Test 1: Discover initial state
+	echo "Initial SED state:"
+	nvme_sed_discover "$TEST_DEV" | grep -E "Locking|Locked"
+
+	# Test 2: Initialize SED
+	echo "Initializing SED..."
+	nvme_sed_init "$TEST_DEV" > /dev/null 2>&1
+
+	# Verify initialization
+	if nvme_sed_discover "$TEST_DEV" | grep -q "Locking Feature Enabled.*: yes"; then
+		echo "SED initialization successful"
+	else
+		echo "SED initialization failed"
+		return
+	fi
+
+	# Test 3: Lock the device
+	echo "Locking device..."
+	nvme_sed_lock "$TEST_DEV"
+
+	# Verify lock
+	if nvme_sed_discover "$TEST_DEV" | grep -q "Locked.*: yes"; then
+		echo "Device locked successfully"
+	else
+		echo "Device lock failed"
+	fi
+
+	# Test 4: Unlock the device
+	echo "Unlocking device..."
+	nvme_sed_unlock "$TEST_DEV"
+
+	# Verify unlock
+	if nvme_sed_discover "$TEST_DEV" | grep -q "Locked.*: no"; then
+		echo "Device unlocked successfully"
+	else
+		echo "Device unlock failed"
+	fi
+
+	# Test 5: Change password
+	echo "Changing password..."
+	nvme_sed_change_password "$TEST_DEV" &> /dev/null
+
+	# Test 6: Revert to disable locking
+	echo "Reverting SED..."
+	nvme_sed_revert "$TEST_DEV" &> /dev/null
+
+	# Verify revert
+	if nvme_sed_discover "$TEST_DEV" | grep -q "Locking Feature Enabled.*: no"; then
+		echo "SED revert successful"
+	else
+		echo "SED revert failed"
+	fi
+
+	# Test 7: Reset to disable locking with destructive revert
+	echo "Destructive revert SED..."
+	nvme_sed_init "$TEST_DEV" &> /dev/null
+	nvme_sed_lock "$TEST_DEV"
+	nvme_sed_revert_destructive "$TEST_DEV" &> /dev/null
+
+	# Verify destructive revert
+	if nvme_sed_discover "$TEST_DEV" | grep -q "Locking Feature Enabled.*: no"; then
+		echo "Destructive revert successful"
+	else
+		echo "Destructive revert failed"
+	fi
+
+	echo "Test complete"
+}
