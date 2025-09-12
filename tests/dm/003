@@ -15,7 +15,7 @@ requires() {
 	_have_scsi_debug
 }
 
-readonly TO_SKIP=255
+readonly SKIP_VAL=255
 
 setup_test_device() {
 	local dev blk_sz dpath
@@ -26,7 +26,7 @@ setup_test_device() {
 
 	if [[ ! -f /sys/block/${SCSI_DEBUG_DEVICES[0]}/queue/write_zeroes_unmap_max_hw_bytes ]]; then
 		_exit_scsi_debug
-		return $TO_SKIP
+		return $SKIP_VAL
 	fi
 
 	dev="/dev/${SCSI_DEBUG_DEVICES[0]}"
@@ -50,7 +50,7 @@ test() {
 	dname=$(setup_test_device lbprz=0)
 	ret=$?
 	if ((ret)); then
-		if ((ret == TO_SKIP)); then
+		if ((ret == SKIP_VAL)); then
 			SKIP_REASONS+=("kernel does not support unmap write zeroes sysfs interface")
 		fi
 		return 1
