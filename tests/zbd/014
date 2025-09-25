@@ -1,0 +1,226 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2025 Google LLC
+#
+# Test the combination of inline encryption and bio splitting. About the values
+# of the parameters in this test:
+# - The zone size is 4 MiB and is larger than max_sectors_kb.
+# - The maximum bio size supported by the code in block/blk-crypto-fallback.c
+#   is BIO_MAX_VECS * PAGE_SIZE or 1 MiB if the page size is 4 KiB.
+# - max_sectors_kb has been set to 512 KiB to cause further bio splitting.
+#
+# Without these two commits, this test triggers an I/O error:
+# - Commit e3290419d9be ("blk-crypto: convert to use
+#   bio_submit_split_bioset()").
+# - Commit b2f5974079d8 ("block: fix ordering of recursive split IO").
+
+. tests/zbd/rc
+. common/null_blk
+
+DESCRIPTION="test inline encryption and bio splitting"
+
+requires() {
+	_have_driver f2fs
+	_have_driver null_blk
+	_have_program fscrypt
+	_have_program getconf
+	_have_program mkfs.f2fs
+	for o in BLK_INLINE_ENCRYPTION_FALLBACK FS_ENCRYPTION_INLINE_CRYPT; do
+		if ! _check_kernel_option "$o"; then
+			SKIP_REASONS+=("Kernel option $o has not been enabled")
+		fi
+	done
+	if [ ! -e /etc/fscrypt.conf ]; then
+		SKIP_REASONS+=("/etc/fscrypt.conf is missing. 'fscrypt setup' must be run first.")
+	fi
+}
+
+# Start block I/O tracing with filter "$1".
+trace_block_io() {
+	if [ -e /sys/kernel/tracing/tracing_on ]; then
+		(
+			set -e
+			cd /sys/kernel/tracing
+			lsof -t trace_pipe | xargs -r kill
+			echo 1024 > buffer_size_kb
+			echo nop > current_tracer
+			echo 0 > tracing_on
+			echo > trace
+			echo 0 > events/enable
+			echo 1 > events/block/enable
+			echo 0 > events/block/block_dirty_buffer/enable
+			echo 0 > events/block/block_plug/enable
+			echo 0 > events/block/block_touch_buffer/enable
+			echo 0 > events/block/block_unplug/enable
+			# Set filter "$1" for all enabled block tracing events.
+			grep -lw 1 events/block/*/enable |
+			while read -r event_path; do
+				filter_path="${event_path%enable}filter"
+				echo "$1" > "$filter_path"
+			done
+			echo 1 > tracing_on
+			echo "Tracing has been enabled" >>"$FULL"
+			cat trace_pipe > "${FULL%.full}-block-trace.txt"
+		)
+	fi
+}
+
+# Wait until trace_block_io() has enabled tracing.
+wait_until_tracing_started() {
+	if [ -e /sys/kernel/tracing/tracing_on ]; then
+		while [ "$(</sys/kernel/tracing/tracing_on)" = 0 ]; do
+			sleep .1
+		done
+	fi
+}
+
+# Stop tracing. $1 is the tracing PID.
+stop_tracing() {
+	if [ -e /sys/kernel/tracing/tracing_on ]; then
+		kill "$1"
+		(
+			set -e
+			cd /sys/kernel/tracing
+			echo 0 > tracing_on
+			echo 0 > events/enable
+		)
+	fi
+}
+
+# Report block I/O statistics. $1 is the output prefix. $2 and $3 are before and
+# after statistics that come from /sys/class/block/.../stat.
+report_stats() {
+	local pfx=$1 before after
+	read -r -a before <<<"$2"
+	read -r -a after <<<"$3"
+	local reads=$((after[0]-before[0]))
+	local rmerge=$((after[1]-before[1]))
+	local writes=$((after[4]-before[4]))
+	local wmerge=$((after[5]-before[5]))
+	echo "$pfx reads: $reads rmerge: $rmerge writes: $writes wmerge: $wmerge"
+}
+
+# Convert block device name $1 into a Linux kernel device number.
+devno() {
+	IFS=: read -r maj min <"/sys/class/block/$(basename "$1")/dev"
+	# From <linux/kdev_t.h>: MINORBITS=20.
+	echo $(((maj << 20) + min))
+}
+
+run_test() {
+	# From <linux/bio.h>: BIO_MAX_VECS=256.
+	local bio_max_vecs=256
+
+	local page_size
+	page_size=$(getconf PAGE_SIZE)
+
+	# In bytes.
+	local max_inl_encr_bio_size=$((bio_max_vecs * page_size))
+
+	if umount /dev/nullb1 >>"$FULL" 2>&1; then :; fi
+	_remove_null_blk_devices
+
+	# A small conventional block device for the F2FS metadata.
+	local null_blk_params=(
+		blocksize=4096
+		discard=1
+		max_sectors=$(((1 << 32) - 1))
+		memory_backed=1
+		size=64           # MiB
+		submit_queues=1
+		power=1
+	)
+	_configure_null_blk nullb1 "${null_blk_params[@]}"
+	local cdev=/dev/nullb1
+
+	# A larger zoned block device for the data.
+	local null_blk_params=(
+		blocksize=4096
+		completion_nsec=10000000 # 10 ms
+		irqmode=2
+		# Half of the maximum bio size supported by the inline
+		# encryption fallback code.
+		max_sectors=$((max_inl_encr_bio_size >> 10))
+		memory_backed=1
+		hw_queue_depth=1
+		size=1024         # MiB
+		submit_queues=1
+		# Four times the maximum bio size supported by the inline
+		# encryption fallback code.
+		zone_size="$(((4 * max_inl_encr_bio_size) >> 20))"
+		zoned=1
+		power=1
+	)
+	_configure_null_blk nullb2 "${null_blk_params[@]}"
+	local zdev_basename=nullb2
+	local zdev=/dev/${zdev_basename}
+	local zdev_devno
+	zdev_devno=$(devno "$zdev")
+
+	{
+		ls -ld "${cdev}" "${zdev}"
+		echo "${zdev_basename} settings:"
+		(
+			cd "/sys/class/block/$zdev_basename/queue" &&
+			grep -vw 0 ./*
+		) || true
+	} >>"${FULL}" 2>&1
+
+	trace_block_io "dev == ${zdev_devno}" &
+	echo $! > "${trace_pid_file}"
+	wait_until_tracing_started
+
+	{
+		mkfs.f2fs -q -O encrypt -m "${cdev}" -c "${zdev}"
+		mkdir -p "${mount_dir}"
+		mount -o inlinecrypt -t f2fs "${cdev}" "${mount_dir}"
+		local encrypted_dir="${mount_dir}/encrypted"
+		mkdir -p "${encrypted_dir}"
+		fscrypt setup "${mount_dir}" </dev/null
+		local keyfile=$TMPDIR/keyfile
+		dd if=/dev/zero of="$keyfile" bs=32 count=1 status=none
+		fscrypt encrypt "${encrypted_dir}" --source=raw_key \
+			--name=protector --key="$keyfile"
+		fscrypt status "${encrypted_dir}"
+
+		local before after
+		read -r -a before <"/sys/class/block/${zdev_basename}/stat"
+		echo "Starting IO"
+		local cmd="dd if=/dev/zero of=${encrypted_dir}/file bs=64M count=15 conv=fdatasync status=none"
+		echo "$cmd"
+	} >>"$FULL" 2>&1
+	eval "$cmd"
+	{
+		ls -ld "${mount_dir}/encrypted/file"
+		read -r -a after <"/sys/class/block/${zdev_basename}/stat"
+		report_stats "zdev:" "${before[*]}" "${after[*]}"
+	} >>"$FULL" 2>&1
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	# Global variables.
+	mount_dir="$TMPDIR/mnt"
+	trace_pid_file="$TMPDIR/trace_pid"
+
+	(
+		set -e
+		run_test
+	)
+	# shellcheck disable=SC2181
+	(($? != 0)) && fail=true
+
+	umount "${mount_dir}" >>"${FULL}" 2>&1
+	local trace_pid
+	trace_pid=$(cat "${trace_pid_file}" 2>/dev/null)
+	[ -n "${trace_pid}" ] && stop_tracing "${trace_pid}"
+	_exit_null_blk
+
+	if [ -z "$fail" ]; then
+		echo "Test complete"
+	else
+		echo "Test failed"
+		return 1
+	fi
+}
