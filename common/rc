@@ -198,13 +198,14 @@ _have_kernel_config_file() {
 	return 0
 }
 
-# Check if the specified kernel option is defined.
-_check_kernel_option() {
-	local f opt=$1
+# Retrieve the value of kernel option $1.
+_get_kernel_option() {
+	local f opt=$1 result
 
 	for f in /proc/config.gz /boot/config-$(uname -r); do
 		[ -e "$f" ] || continue
-		if zgrep -q "^CONFIG_${opt}=[my]$" "$f"; then
+		if result=$(zgrep "^CONFIG_${opt}=" "$f"); then
+			echo "${result#*=}"
 			return 0
 		fi
 	done
@@ -212,8 +213,20 @@ _check_kernel_option() {
 	return 1
 }
 
+# Check if kernel option $1 is defined.
+_check_kernel_option() {
+	local value
+
+	case "$(_get_kernel_option "$1")" in
+		y|m)
+			return 0;;
+	esac
+
+	return 1
+}
+
 # Combine _have_kernel_config_file() and _check_kernel_option().
-# Set SKIP_RESAON when _check_kernel_option() returns false.
+# Set SKIP_REASONS when _check_kernel_option() returns false.
 _have_kernel_option() {
 	local opt=$1
 
@@ -343,7 +356,10 @@ _test_dev_queue_set() {
 	      ${SYSFS_QUEUE_SAVED["$path"]-unset} == unset ]]; then
 		SYSFS_QUEUE_SAVED["$path"]="$(_test_dev_queue_get "$1")"
 	fi
-	echo "$2" >"$path"
+	if ! echo "$2" >"$path"; then
+		echo "echo $2 > $path failed"
+		return 1
+	fi
 }
 
 _test_dev_set_scheduler() {

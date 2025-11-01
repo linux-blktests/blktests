@@ -145,7 +145,7 @@ _configure_scsi_debug() {
 		fi
 	done
 
-	# Modify parameters specifeid with key=value arguments
+	# Modify parameters specified with key=value arguments
 	for o in "$@"; do
 		key=${o%=*}
 		value=${o#*=}

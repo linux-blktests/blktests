@@ -267,9 +267,7 @@ mpath_has_stale_dev() {
 # Check whether multipath definition $1 includes the queue_if_no_path keyword.
 is_qinp_def() {
 	case "$1" in
-		*" 3 queue_if_no_path queue_mode mq "*)
-			return 0;;
-		*" 1 queue_if_no_path "*)
+		*" queue_if_no_path "*)
 			return 0;;
 		*)
 			return 1;;

@@ -15,18 +15,45 @@ requires() {
 	_have_module scsi_debug
 }
 
-config_hz() {
-	if [ -e /proc/config.gz ]; then
-		zcat /proc/config.gz
-	else
-		cat "/boot/config-$(uname -r)"
-	fi | sed -n 's/^CONFIG_HZ=//p'
+start_tracing() {
+	if [ -e /sys/kernel/tracing/tracing_on ]; then
+		(
+			set -e
+			cd /sys/kernel/tracing
+			echo 1024 > buffer_size_kb
+			echo function > current_tracer
+			echo 0 > tracing_on
+			echo > trace
+			{
+				echo scsi_error_handler
+				echo "scsi_eh_*"
+				echo scsi_timeout
+				echo scsi_try_host_reset
+			} > set_ftrace_filter
+			echo 0 > events/enable
+			echo 1 > tracing_on
+		)
+	fi
 }
 
-test() {
-	local dev freq delay_s jdelay
+stop_tracing() {
+	if [ -e /sys/kernel/tracing/tracing_on ]; then
+		(
+			set -e
+			cd /sys/kernel/tracing
+			cat trace >> "${FULL}"
+			if ! grep -qw scsi_timeout trace; then
+				echo "Unexpected: scsi_timeout() has not been called"
+			fi
+			echo 0 > tracing_on
+		)
+	fi
+}
 
-	echo "Running ${TEST_NAME}"
+run_test() {
+	set -e
+
+	local dev freq delay_s jdelay
 
 	if ! _init_scsi_debug; then
 		return 1
@@ -42,10 +69,15 @@ test() {
 	echo "I/O timeout = $(<"/sys/class/block/$dev/queue/io_timeout")" >>"$FULL"
         # Change the scsi_debug delay to 3 seconds.
 	delay_s=3
-        freq=$(config_hz)
+        freq=$(_get_kernel_option HZ)
         jdelay=$((delay_s * "${freq}"))
         echo "CONFIG_HZ=${freq} jdelay=${jdelay}" >>"$FULL"
 	echo "$jdelay" > /sys/module/scsi_debug/parameters/delay
+
+	start_tracing
+
+	set +e
+
 	if dd if="/dev/$dev" of=/dev/null bs=512 count=1 \
 	      iflag=direct >&/dev/null; then
 		echo "Reading from scsi_debug succeeded"
@@ -53,10 +85,27 @@ test() {
 		echo "Reading from scsi_debug failed"
 	fi
 
+	stop_tracing
+
 	# Disable SCSI error handler logging
 	echo 0 > /sys/module/scsi_mod/parameters/scsi_logging_level
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	(
+	        run_test
+	)
+	# shellcheck disable=SC2181
+	(($? != 0)) && fail=true
 
 	_exit_scsi_debug
 
-	echo "Test complete"
+	if [ -z "$fail" ]; then
+	        echo "Test complete"
+	else
+	        echo "Test failed"
+	        return 1
+	fi
 }
