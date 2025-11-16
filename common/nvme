@@ -196,6 +196,9 @@ _cleanup_nvmet() {
 		for ns in "${subsys}"/namespaces/*; do
 			rmdir "${ns}"
 		done
+		for allowed_host in "${subsys}"/allowed_hosts/*; do
+			rm -f "$allowed_host"
+		done
 		rmdir "${subsys}"
 	done
 
