@@ -285,6 +285,7 @@ _nvme_connect_subsys() {
 	local ctrl_loss_tmo=""
 	local no_wait=false
 	local no_wait_ns=false
+	local expect_failure=false
 	local hdr_digest=false
 	local data_digest=false
 	local tls=false
@@ -350,6 +351,10 @@ _nvme_connect_subsys() {
 				;;
 			--no-wait-ns)
 				no_wait_ns=true
+				shift 1
+				;;
+			--expect-failure)
+				expect_failure=true
 				shift 1
 				;;
 			--hdr-digest)
@@ -433,6 +438,16 @@ _nvme_connect_subsys() {
 	fi
 	ARGS+=(--output-format=json)
 	connect=$(nvme connect "${ARGS[@]}" 2> /dev/null)
+	ret=$?
+	if [[ ${expect_failure} = false ]]; then
+		if [[ ${ret} != 0 ]]; then
+		   echo "FAIL: nvme connect return error code"
+		fi
+	else
+		if [[ ${ret} == 0 ]]; then
+		   echo "FAIL: nvme connect did not return error code"
+		fi
+	fi
 
 	# Wait until device file and sysfs attributes get ready
 	if [[ ${no_wait} = false ]]; then
