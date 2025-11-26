@@ -12,7 +12,7 @@ DESCRIPTION="test md atomic writes"
 QUICK=1
 
 requires() {
-	_have_driver scsi_debug
+	_have_scsi_debug
 	_stacked_atomic_test_requires
 }
 

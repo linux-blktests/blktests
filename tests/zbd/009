@@ -36,7 +36,7 @@ requires() {
 	_have_driver btrfs
 	_have_module_param scsi_debug zone_cap_mb
 	_have_program mkfs.btrfs && have_good_mkfs_btrfs
-	_have_module scsi_debug
+	_have_loadable_scsi_debug
 }
 
 test() {
