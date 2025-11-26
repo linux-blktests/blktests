@@ -13,6 +13,7 @@ DMESG_FILTER="sed -r 's/(guard tag error at sector|ref tag error at location)/bl
 
 requires() {
 	_have_module scsi_debug
+	_module_not_in_use scsi_debug
 }
 
 test_pi() {

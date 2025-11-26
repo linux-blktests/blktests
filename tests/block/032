@@ -15,6 +15,7 @@ QUICK=1
 requires() {
 	_have_xfs
 	_have_module scsi_debug
+	_module_not_in_use scsi_debug
 }
 
 test() {

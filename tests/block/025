@@ -13,6 +13,7 @@ DESCRIPTION="do a huge discard with 4k sector size"
 
 requires() {
 	_have_module scsi_debug
+	_module_not_in_use scsi_debug
 }
 
 test() {

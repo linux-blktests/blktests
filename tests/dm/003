@@ -13,6 +13,7 @@ QUICK=1
 
 requires() {
 	_have_scsi_debug
+	_module_not_in_use scsi_debug
 }
 
 setup_test_device() {

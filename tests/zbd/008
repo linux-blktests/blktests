@@ -16,6 +16,7 @@ requires() {
 	_have_module scsi_debug
 	_have_module_param scsi_debug zbc
 	_have_program xfs_io
+	_module_not_in_use scsi_debug
 }
 
 test() {
