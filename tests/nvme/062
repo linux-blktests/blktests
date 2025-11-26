@@ -71,7 +71,7 @@ test() {
 
 	# Test unencrypted connection
 	echo "Test unencrypted connection w/ tls required (should fail)"
-	_nvme_connect_subsys --no-wait
+	_nvme_connect_subsys --no-wait --expect-failure
 
 	_nvme_disconnect_subsys
 
