@@ -18,6 +18,7 @@ requires() {
 	_have_scsi_debug
 	_nvme_requires
 	_require_nvme_trtype_is_loop
+	_module_not_in_use scsi_debug
 }
 
 setup_test_device() {

@@ -16,6 +16,7 @@ requires() {
 	_have_scsi_debug
 	_have_driver linear
 	_have_driver raid0
+	_module_not_in_use scsi_debug
 }
 
 setup_test_device() {

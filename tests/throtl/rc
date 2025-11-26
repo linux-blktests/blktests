@@ -24,6 +24,7 @@ group_requires() {
 	_have_kernel_option BLK_DEV_THROTTLING
 	_have_cgroup2_controller io
 	_have_program bc
+	_module_not_in_use scsi_debug
 }
 
 _set_throtl_blkdev_type() {
