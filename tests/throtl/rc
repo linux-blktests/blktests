@@ -75,7 +75,7 @@ _configure_throtl_blkdev() {
 		fi
 		;;
 	sdebug)
-		args=(dev_size_mb=1024)
+		args=(dev_size_mb=1024 delay=0)
 		if _configure_scsi_debug "${args[@]}"; then
 			THROTL_DEV=${SCSI_DEBUG_DEVICES[0]}
 			return
