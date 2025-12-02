@@ -19,6 +19,10 @@ requires() {
 	_have_kernel_options FAIL_IO_TIMEOUT FAULT_INJECTION_DEBUG_FS
 }
 
+device_requires() {
+        _require_test_dev_is_not_nvme_multipath
+}
+
 test_device() {
 	local nvme_ns
 	local pdev
