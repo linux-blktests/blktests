@@ -76,6 +76,9 @@ _configure_throtl_blkdev() {
 		;;
 	sdebug)
 		args=(dev_size_mb=1024)
+        if ((sector_size > 4096)); then
+            sector_size=4096
+        fi
 		((sector_size)) && args+=(sector_size="${sector_size}")
 		if _configure_scsi_debug "${args[@]}"; then
 			THROTL_DEV=${SCSI_DEBUG_DEVICES[0]}
