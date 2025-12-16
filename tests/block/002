@@ -14,6 +14,7 @@ QUICK=1
 requires() {
 	_have_blktrace
 	_have_scsi_debug
+	_module_not_in_use scsi_debug
 }
 
 test() {
