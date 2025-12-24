@@ -6,12 +6,23 @@ all:
 
 clean:
 	$(MAKE) -C src clean
+	rm -f tags cscope.*
 
 install:
 	install -m755 -d $(dest)
 	install check $(dest)
 	cp -R tests common $(dest)
 	$(MAKE) -C src dest=$(dest)/src install
+
+tags: check_utility 
+	@rm -f cscope.* tags
+	find . -type f -print | grep -v -E ".out|.git|.md|.files|.cmd|tags|LICENSES|.el|.jinja2|.py|results" > cscope.files
+	ctags -R --language-force=sh -L cscope.files --extras=+f
+	cscope -bq -I/usr/include
+
+check_utility:
+	@command -v ctags &>/dev/null || (echo "Error: 'ctags' not found in PATH." && exit 1)
+	@command -v cscope &>/dev/null || (echo "Error: 'cscope' not found in PATH." && exit 1)
 
 # SC2119: "Use foo "$@" if function's $1 should mean script's $1". False
 # positives on helpers like _init_scsi_debug.
@@ -36,4 +47,4 @@ check-parallel:
 	find -L -name '*.out' -perm /u=x+g=x+o=x -printf '%p is executable\n' | grep . && ret=1; \
 	exit $$ret
 
-.PHONY: all check check-parallel install
+.PHONY: all check check-parallel install tags check_utility
