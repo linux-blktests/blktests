@@ -1,0 +1,20 @@
+Test Complete
+=======
+Connected to NVMe device: nvme0
+Using namespace: nvme0n1
+Target WWPN: 0x20001100ab000000
+Found FC remote port: rport-*
+Initial FC rport state: Online
+Starting background I/O
+Setting FC rport rport-* to Marginal state
+FC rport state after setting to Marginal: Marginal
+Waiting for NVMe controller to detect marginal state...
+SUCCESS: NVMe controller is now marginal
+Setting FC rport rport-* back to Online state
+FC rport state after setting to Online: Online
+Waiting for NVMe controller to return to live state...
+SUCCESS: NVMe controller is back to live state
+Stopping background I/O
+SUCCESS: Background I/O completed successfully
+disconnected 1 controller(s)
+Test complete
