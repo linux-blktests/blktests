@@ -1,0 +1,49 @@
+Running nvme/070
+Starting background I/O
+Testing iopolicy: numa
+Changing FC links to online
+Set all online: pass
+One host marginal: pass
+All marginal except inaccessible: pass
+All marginal: pass
+One remote non-optimized online: pass
+Two remote non-optimized online: pass
+Two remote non-optimized, One remote optimized: pass
+Set all online: pass
+All marginal except inaccessible: pass
+All marginal: pass
+One remote optimized online: pass
+Two remote optimized online: pass
+All online: pass
+Testing iopolicy: queue-depth
+Changing FC links to online
+Set all online: pass
+One host marginal: pass
+All marginal except inaccessible: pass
+All marginal: pass
+One remote non-optimized online: pass
+Two remote non-optimized online: pass
+Two remote non-optimized, One remote optimized: pass
+Set all online: pass
+All marginal except inaccessible: pass
+All marginal: pass
+One remote optimized online: pass
+Two remote optimized online: pass
+All online: pass
+Testing iopolicy: round-robin
+Changing FC links to online
+Set all online: pass
+One host marginal: pass
+All marginal except inaccessible: pass
+All marginal: pass
+One remote non-optimized online: pass
+Two remote non-optimized online: pass
+Two remote non-optimized, One remote optimized: pass
+Set all online: pass
+All marginal except inaccessible: pass
+All marginal: pass
+One remote optimized online: pass
+Two remote optimized online: pass
+All online: pass
+Stopping background I/O
+Test complete

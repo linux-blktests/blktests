@@ -1,0 +1,454 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2024 John Meneghini <jmeneghi@redhat.com>
+#
+# Test nvme-fc marginal path handling with fcloop
+
+. tests/nvme/rc
+
+DESCRIPTION="test nvme-fc marginal path handling"
+
+requires() {
+	_nvme_requires
+	_have_loop
+	_have_fio
+	_require_nvme_trtype fc
+}
+
+set_conditions() {
+	_set_nvme_trtype "$@"
+}
+
+test_set_all_online() {
+	local IOPOLICY=$1 # "numa" "queue-depth" "round-robin"
+	shift
+	local -a RPORTS_PATHS=("$@") # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		_rport_set_online "$subsys_path" || return 1
+		_rport_check_online "$subsys_path" Online || return 1
+	done
+
+	if [ "$IOPOLICY" == "numa" ]; then
+		_rport_check_one_use online "${def_check_timeout}" "${RPORTS_PATHS[@]}" || return 1
+	else
+		for subsys_path in "${RPORTS_PATHS[@]}"; do
+			# Only optimized paths will be in use
+			_rport_check_use_opt "$subsys_path" || return 1
+		done
+	fi
+}
+
+test_set_one_host_marginal() {
+	local HOST=$1 # host1
+	shift
+	local -a ARGS=("$@")
+	local RPORTS_CNT="$(( $# / 2 ))"
+	local PATHS_POS # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local HOSTS_POS # host1 host2
+
+	for (( PATHS_POS=0; PATHS_POS < RPORTS_CNT; PATHS_POS++ )); do
+		HOSTS_POS="$(( RPORTS_CNT + PATHS_POS ))"
+		if [[ "${ARGS[$HOSTS_POS]}" == "$HOST" ]]; then
+			_rport_set_marginal "${ARGS[$PATHS_POS]}" || return 1
+		fi
+	done
+
+	# check if all links are of expected state on hosts
+	for (( PATHS_POS=0; PATHS_POS < RPORTS_CNT; PATHS_POS++ )); do
+		HOSTS_POS="$(( RPORTS_CNT + PATHS_POS ))"
+		if [[ "${ARGS[$HOSTS_POS]}" == "$HOST" ]]; then
+			_rport_check "${ARGS[$PATHS_POS]}" "Marginal" || return 1
+		else
+			_rport_check_online "${ARGS[$PATHS_POS]}" "Online" || return 1
+			_rport_check_use_opt "${ARGS[$PATHS_POS]}" || return 1
+		fi
+	done
+}
+
+test_set_all_marginal_except_inaccesable()  {
+	local -a RPORTS_PATHS=("$@") # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		if _rport_is_inaccessible "$subsys_path"; then
+			_rport_set_online "$subsys_path" || return 1
+			_rport_check_online "$subsys_path" Online || return 1
+			continue
+		fi
+		_rport_set_marginal "$subsys_path" || return 1
+		_rport_check_online "$subsys_path" Marginal || return 1
+	done
+
+	if [ "$IOPOLICY" == "numa" ]; then
+		_rport_check_one_use marginal "${def_check_timeout}" "${RPORTS_PATHS[@]}" || return 1
+	else
+		for subsys_path in "${RPORTS_PATHS[@]}"; do
+			# Only optimized paths will be in use
+			_rport_check_use_opt "$subsys_path" || return 1
+		done
+	fi
+}
+
+test_set_all_marginal() {
+	local -a RPORTS_PATHS=("$@") # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		_rport_set_marginal "$subsys_path" || return 1
+		_rport_check_online "$subsys_path" Marginal || return 1
+	done
+
+	if [ "$IOPOLICY" == "numa" ]; then
+		_rport_check_one_use marginal "${def_check_timeout}" "${RPORTS_PATHS[@]}" || return 1
+	else
+		for subsys_path in "${RPORTS_PATHS[@]}"; do
+			# Only optimized paths will be in use
+			_rport_check_use_opt "$subsys_path" || return 1
+		done
+	fi
+}
+
+test_set_one_non_optimized_online() {
+	local -a RPORTS_PATHS=("$@") # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	# Set one non-optimized online
+	# First set one non-optimized online to online then check optimized paths
+	local next_marginal=0
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		if _rport_is_non_optimized "$subsys_path"; then
+			if [ $next_marginal == 1 ]; then
+				_rport_check "$subsys_path" Marginal || return 1
+				break
+			fi
+			_rport_set_online "$subsys_path" || return 1
+			_rport_check "$subsys_path" Online || return 1
+			next_marginal=1
+		fi
+	done
+	# Check optimized paths
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		if _rport_is_optimized "$subsys_path"; then
+			# Optimized paths will not be in use
+			_rport_check "$subsys_path" Marginal || return 1
+		fi
+		if _rport_is_inaccessible "$subsys_path"; then
+			# Inaccessible paths will not be in use
+			_rport_check "$subsys_path" Marginal || return 1
+		fi
+	done
+}
+
+test_set_all_non_optimized_online() {
+	local IOPOLICY=$1 # "numa" "queue-depth" "round-robin"
+	shift
+	local -a RPORTS_PATHS=("$@") # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	# Set all non-optimized online
+	local numa_in_use=0
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		if _rport_is_optimized "$subsys_path"; then
+			_rport_check "$subsys_path" Marginal || return 1
+		elif _rport_is_non_optimized "$subsys_path"; then
+			_rport_set_online "$subsys_path" || return 1
+			if [ "$IOPOLICY" == "numa" ] && [ $numa_in_use == 0 ]; then
+				_rport_check "$subsys_path" Online || return 1
+				numa_in_use=1
+			elif [ "$IOPOLICY" == "numa" ] && [ $numa_in_use == 1 ]; then
+				_rport_check_online "$subsys_path" Online || return 1
+				# Only one of the online paths should be in use
+				_rport_check_use "$subsys_path" Marginal || return 1
+			else
+				_rport_check "$subsys_path" Online || return 1
+			fi
+		else
+			# Inaccessible paths will not be in use
+			_rport_check "$subsys_path" Marginal || return 1
+		fi
+	done
+}
+
+set_one_optimized_online() {
+	local -a RPORTS_PATHS=("$@") # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	# Set one optimized online
+	local next_marginal=0
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		if _rport_is_optimized "$subsys_path"; then
+			if [ $next_marginal == 1 ]; then
+				_rport_check "$subsys_path" Marginal || return 1
+				break
+			fi
+			_rport_set_online "$subsys_path" || return 1
+			_rport_check "$subsys_path" Online || return 1
+			next_marginal=1
+		fi
+	done
+}
+
+test_set_all_non_one_optimized_online() {
+	local -a RPORTS_PATHS=("$@") # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	# Set one optimized online
+	# First set one optimized online to online then check non-optimized paths
+	set_one_optimized_online "${RPORTS_PATHS[@]}" || return 1
+
+	# Check non-optimized paths
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		if _rport_is_non_optimized "$subsys_path"; then
+			_rport_check_online "$subsys_path" Online || return 1
+			# Only optimized paths will be in use
+			# Inaccessible and non-optimized paths will not be in use
+			_rport_check_use "$subsys_path" Marginal || return 1
+		fi
+		if _rport_is_inaccessible "$subsys_path"; then
+			_rport_check "$subsys_path" Marginal || return 1
+		fi
+	done
+}
+
+test_set_one_optimized_online() {
+	local -a RPORTS_PATHS=("$@") # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	# Set one optimized online
+	# First set one optimized online to online then check non-optimized paths
+	set_one_optimized_online "${RPORTS_PATHS[@]}" || return 1
+
+	# Check non-optimized paths
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		if ! _rport_is_optimized "$subsys_path"; then
+			# Only optimized paths will be in use
+			# Inaccessible and non-optimized paths will not be in use
+			_rport_check "$subsys_path" "Marginal" || return 1
+		fi
+	done
+}
+
+test_set_two_optimized_online() {
+	local IOPOLICY=$1 # "numa" "queue-depth" "round-robin"
+	shift
+	local -a RPORTS_PATHS=("$@")
+
+	# Set two optimized online
+	local numa_in_use=0
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		if _rport_is_optimized "$subsys_path"; then
+			_rport_set_online "$subsys_path" || return 1
+			if [ "$IOPOLICY" == "numa" ] && [ $numa_in_use == 0 ]; then
+				_rport_check "$subsys_path" Online || return 1
+				numa_in_use=1
+			elif [ "$IOPOLICY" == "numa" ] && [ $numa_in_use == 1 ]; then
+				_rport_check_online "$subsys_path" Online || return 1
+				# Only one of the online paths should be in use
+				_rport_check_use "$subsys_path" Marginal || return 1
+			else
+				_rport_check "$subsys_path" Online || return 1
+			fi
+		else
+			_rport_check "$subsys_path" Marginal || return 1
+		fi
+	done
+}
+
+run_test() {
+	local IOPOLICY=$1 # "numa" "queue-depth" "round-robin"
+	shift
+	local -a ARGS=("$@")
+	local RPORTS_CNT="$(( $# / 2 ))"
+	local -a RPORTS_PATHS # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local -a RPORTS_HOSTS # host1 host2
+	local PATHS_POS # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local HOSTS_POS # host1 host2
+
+	# recrate the arrays
+	for (( PATHS_POS=0; PATHS_POS < RPORTS_CNT; PATHS_POS++ )); do
+		HOSTS_POS+="$(( RPORTS_CNT + PATHS_POS ))"
+		RPORTS_PATHS+=("${ARGS[$PATHS_POS]}")
+		RPORTS_HOSTS+=("${ARGS[$HOSTS_POS]}")
+	done
+
+
+	echo Changing FC links to online
+	# Initial check to see if FC is operational and set ports to online
+	test_set_all_online "$IOPOLICY" "${RPORTS_PATHS[@]}" \
+		&& echo "Set all online: pass" || echo "Set all online: fail"
+
+	test_set_one_host_marginal "${RPORTS_HOSTS[0]}" "${RPORTS_PATHS[@]}" \
+		"${RPORTS_HOSTS[@]}" && echo "One host marginal: pass" \
+		|| echo "One host marginal: fail"
+	test_set_all_marginal_except_inaccesable "${RPORTS_PATHS[@]}" \
+		&& echo "All marginal except inaccessible: pass" \
+		|| echo "All marginal except inaccessible: fail"
+	test_set_all_marginal "${RPORTS_PATHS[@]}" \
+		&& echo "All marginal: pass" || echo "All marginal: fail"
+
+	test_set_one_non_optimized_online "${RPORTS_PATHS[@]}" \
+		&& echo "One remote non-optimized online: pass" \
+		|| echo "One remote non-optimized online: fail"
+	test_set_all_non_optimized_online "$IOPOLICY" "${RPORTS_PATHS[@]}" \
+		&& echo "Two remote non-optimized online: pass" \
+		|| echo "Two remote non-optimized online: fail"
+
+	test_set_all_non_one_optimized_online "${RPORTS_PATHS[@]}" \
+		&& echo "Two remote non-optimized, One remote optimized: pass" \
+		|| echo "Two remote non-optimized, One remote optimized: fail"
+	test_set_all_online "$IOPOLICY" "${RPORTS_PATHS[@]}" \
+		&& echo "Set all online: pass" || echo "Set all online: fail"
+
+	test_set_all_marginal_except_inaccesable "${RPORTS_PATHS[@]}" \
+		&& echo "All marginal except inaccessible: pass" \
+		|| echo "All marginal except inaccessible: fail"
+	test_set_all_marginal "${RPORTS_PATHS[@]}" \
+		&& echo "All marginal: pass" || echo "All marginal: fail"
+
+	test_set_one_optimized_online "${RPORTS_PATHS[@]}" \
+		&& echo "One remote optimized online: pass" \
+		|| echo "One remote optimized online: fail"
+	test_set_two_optimized_online "$IOPOLICY" "${RPORTS_PATHS[@]}" \
+		&& echo "Two remote optimized online: pass" \
+		|| echo "Two remote optimized online: fail"
+	test_set_all_online "$IOPOLICY" "${RPORTS_PATHS[@]}" \
+		&& echo "All online: pass" || echo "All online: fail"
+}
+
+_nvmet_get_rport() {
+	local PORT="$1"
+
+	local dev
+	for dev in /sys/class/nvme/nvme*; do
+		grep --quiet "io" "$dev/cntrltype" || continue
+		[ -e "$dev" ] || continue
+		dev="$(basename "$dev")"
+		grep --quiet traddr="$(_fc_traddr "$PORT")" "/sys/class/nvme/$dev/address" && echo "$dev" || true
+	done
+	# nvme9
+}
+
+run_tests() {
+	local SUBSYS_PATH="$1"
+	shift
+	local -a PORTS=("$@")
+	local -a RPORTS_PATHS # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local -a RPORTS_HOSTS # host1 host2
+	local rport
+
+	for port in "${PORTS[@]}"; do
+		RPORTS_HOSTS+=("$(_get_fc_host_port "$port")")
+		rport="$(_nvmet_get_rport "$port")"
+		if [ -z "$rport" ]; then
+			echo "Could not find rport for port $port"
+			return 1
+		fi
+		if [[ "$( echo "$rport" | sed -n '$=' )" -gt 1 ]]; then
+			# One traddr has multiple /sys/class/nvme/nvme devices
+			echo "Port $port has multiple rports with address"
+			grep traddr="$(_fc_traddr "$port")" /sys/class/nvme/nvme*/address
+			return 1
+		fi
+		RPORTS_PATHS+=( "${SUBSYS_PATH}/$rport")
+	done
+
+	local IOPOLICYS="numa queue-depth round-robin"
+	for IOPOLICY in $IOPOLICYS; do
+		_rport_set_iopolicy "$SUBSYS_PATH" "$IOPOLICY"
+		echo "Testing iopolicy: $IOPOLICY"
+		run_test "$IOPOLICY" "${RPORTS_PATHS[@]}" "${RPORTS_HOSTS[@]}"
+	done
+}
+
+_find_nvme_subsys() {
+	local subsys=$1
+	local subsysnqn
+	local subsys_path
+	for subsys_path in /sys/class/nvme-subsystem/nvme-subsys*; do
+		[ -e "$subsys_path" ] || continue
+		subsysnqn="$(cat "${subsys_path}/subsysnqn" 2>/dev/null)"
+		if [[ "$subsysnqn" == "$subsys" ]]; then
+			echo "$subsys_path"
+			return
+		fi
+	done
+}
+
+test() {
+	local -a ports
+	local ns
+	local fio_pid
+	local -i host1_port_cnt=0
+	local -i host2_port_cnt=0
+
+	echo "Running ${TEST_NAME}"
+
+	_setup_nvmet 2
+
+	if [[ ! -w /sys/class/fcloop/ctl/set_marginal_rport ]]; then
+		SKIP_REASONS+=("fcloop does not support set_marginal_rport")
+		_nvmet_target_cleanup
+		return 1
+	fi
+
+	_nvmet_target_setup --ports 3
+	_nvmet_target_add_ports --host_port 1 --ports 3
+
+	_get_nvmet_ports "${def_subsysnqn}" ports
+
+	for port in "${ports[@]}"; do
+		if [[ $(_get_fc_host_port "${port}") == 0 ]]; then
+			continue
+		fi
+
+		if [ $host2_port_cnt -eq 0 ]; then
+			_setup_nvmet_port_ana "${port}" 1 "optimized"
+		fi
+		if [ $host2_port_cnt -eq 1 ]; then
+			_setup_nvmet_port_ana "${port}" 1 "non-optimized"
+		fi
+		if [ $host2_port_cnt -eq 2 ]; then
+			_setup_nvmet_port_ana "${port}" 1 "inaccessible"
+		fi
+
+		host2_port_cnt=$((host2_port_cnt + 1))
+	done
+
+	for port in "${ports[@]}"; do
+		if [[ $(_get_fc_host_port "${port}") != 0 ]]; then
+			continue
+		fi
+
+		if [ $host1_port_cnt -eq 0 ]; then
+			_setup_nvmet_port_ana "${port}" 1 "optimized"
+		fi
+		if [ $host1_port_cnt -eq 1 ]; then
+			_setup_nvmet_port_ana "${port}" 1 "non-optimized"
+		fi
+		if [ $host1_port_cnt -eq 2 ]; then
+			_setup_nvmet_port_ana "${port}" 1 "inaccessible"
+		fi
+
+		host1_port_cnt=$((host1_port_cnt + 1))
+	done
+
+	for port in "${ports[@]}"; do
+		_nvme_connect_subsys --port "${port}" --no-wait-ns || return 1
+	done
+
+	# start fio job
+	ns=$(_find_nvme_ns "$def_subsys_uuid")
+	echo "Starting background I/O"
+	set -m
+	_run_fio_verify_io --filename="/dev/${ns}" \
+			   --group_reporting --ramp_time=5 \
+			   --time_based --runtime=1m &> "$FULL" &
+	set +m
+	fio_pid=$!
+	sleep 10
+
+	run_tests "$(_find_nvme_subsys "${def_subsysnqn}")" "${ports[@]}"
+
+	# Stop background I/O
+	echo "Stopping background I/O"
+	{ kill  -- -"${fio_pid}"; wait; } &> /dev/null
+
+	_nvme_disconnect_subsys
+	_nvmet_target_cleanup
+
+	echo "Test complete"
+}
