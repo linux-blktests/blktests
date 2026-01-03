@@ -69,6 +69,30 @@ _have_driver()
 	return 0
 }
 
+# Check that the specified crypto algorithm is present, regardless of
+# whether it's build-in, a module, or provided by the kernel.
+# The module will be loaded if it is loadable, and unloaded at test case end.
+_have_crypto()
+{
+	local modname="${1//-/_}"
+
+	if [ -d "/sys/module/${modname}" ]; then
+		return 0
+	fi
+
+	if ! modprobe -q "${modname}"; then
+		if ! grep -q "${modname}" /proc/crypto; then
+			SKIP_REASONS+=("driver ${modname} is not available")
+			return 1
+		fi
+		return 0
+	fi
+
+	MODULES_TO_UNLOAD+=("${modname}")
+
+	return 0
+}
+
 # Check that the specified module is available as a loadable module and not
 # built-in the kernel.
 _have_module() {
