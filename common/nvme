@@ -1122,7 +1122,7 @@ _nvmet_target_cleanup() {
 }
 
 _require_test_dev_is_nvme() {
-	if ! readlink -f "$TEST_DEV_SYSFS/device" | grep -q nvme; then
+	if ! readlink --canonicalize "$TEST_DEV_SYSFS/device" | grep -q nvme; then
 		SKIP_REASONS+=("$TEST_DEV is not a NVMe device")
 		return 1
 	fi

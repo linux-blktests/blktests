@@ -20,13 +20,11 @@ requires() {
 }
 
 test_device() {
-	local nvme_ns
-	local pdev
-	local i
+	local nvme_ns pdev io_error i
 
 	echo "Running ${TEST_NAME}"
 
-	pdev=$(_get_pci_dev_from_blkdev)
+	pdev=$(_nvme_get_pci_from_dev_sysfs)
 	nvme_ns="$(basename "${TEST_DEV}")"
 	echo 1 > /sys/block/"${nvme_ns}"/io-timeout-fail
 
@@ -40,10 +38,19 @@ test_device() {
 	    --name=reads --direct=1 --filename="${TEST_DEV}" --group_reporting \
 	    --time_based --runtime=1m >& "$FULL"
 
-	if grep -q "Input/output error" "$FULL"; then
-		echo "Test complete"
+	io_error=false
+	grep -q "Input/output error" "$FULL" && io_error=true
+
+	# The timeout failure injection causes an I/O to fail immediately. For
+	# a single-path device, the failed I/O is propagated up the stack and
+	# eventually reported to user space as an error. For multipath devices,
+	# the block layer evaluates whether the I/O is eligible for retry via
+	# failover to an alternate path. Because the I/O fails before the
+	# per-I/O timeout expires, it remains eligible for retry.
+	if _nvme_dev_support_native_multipath; then
+		$io_error && echo "Test failed" || echo "Test complete"
 	else
-		echo "Test failed"
+		$io_error && echo "Test complete" || echo "Test failed"
 	fi
 
 	# Remove and rescan the NVME device to ensure that it has come back

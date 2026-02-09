@@ -156,7 +156,7 @@ dev_to_mpath() {
 	[ -e "$1" ] || return $?
 
 	if [ -L "$1" ]; then
-		e=$(readlink -f "$1")
+		e=$(readlink --canonicalize "$1")
 	else
 		e="$1"
 	fi
@@ -167,7 +167,7 @@ dev_to_mpath() {
 
 	for d in /dev/mapper/mpath*; do
 		if [ -L "$d" ]; then
-			e=$(readlink -f "$d")
+			e=$(readlink --canonicalize "$d")
 		elif [ -e "$d" ]; then
 			e="$d"
 		else
@@ -240,7 +240,7 @@ remove_mpath_dev() {
 				break
 			fi
 			ls -l "$1"
-			stop_bdev_users "$(readlink -f "$1")"
+			stop_bdev_users "$(readlink --canonicalize "$1")"
 			sleep .5
 		done
 		if [[ $i = 0 ]]; then

@@ -21,7 +21,7 @@ test_io_schedulers() {
 		fi
 		use_blk_mq ${mq} ${mq} || return $?
 		dev=$(get_bdev 0) || return $?
-		dm=$(basename "$(readlink -f "${dev}")") || return $?
+		dm=$(basename "$(readlink --canonicalize "${dev}")") || return $?
 		scheds="$(_io_schedulers "$dm")" || return $?
 		for sched in $scheds; do
 			set_scheduler "$dm" "$sched" \

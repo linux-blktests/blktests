@@ -356,7 +356,7 @@ configure_lio_vdev() {
 			cd "$dirname" &&
 			mkdir "$vdev" &&
 			cd "$vdev" &&
-			if [ -b "$(readlink -f "$path")" ]; then
+			if [ -b "$(readlink --canonicalize "$path")" ]; then
 				echo "udev_path=$path," >control
 			elif [ -e "$path" ]; then
 				size=$(stat -c %s "${path}") &&
@@ -365,7 +365,7 @@ configure_lio_vdev() {
 			else
 				{
 					ls -l "$path"
-					readlink -f "$path"
+					readlink --canonicalize "$path"
 				} &>>"$FULL"
 				false
 			fi &&
@@ -506,7 +506,7 @@ start_lio_srpt() {
 	modprobe ib_srpt "${opts[@]}" || return $?
 	i=0
 	for r in "${vdev_path[@]}"; do
-		if [ -b "$(readlink -f "$r")" ]; then
+		if [ -b "$(readlink --canonicalize "$r")" ]; then
 			oflag=("oflag=direct")
 		else
 			oflag=()

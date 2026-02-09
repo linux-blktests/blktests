@@ -370,16 +370,16 @@ _test_dev_set_scheduler() {
 }
 
 _require_test_dev_is_pci() {
-	if ! readlink -f "$TEST_DEV_SYSFS/device" | grep -q pci; then
+	if ! readlink --canonicalize "$TEST_DEV_SYSFS/device" | grep -q pci; then
 		# nvme needs some special casing
-		if readlink -f "$TEST_DEV_SYSFS/device" | grep -q nvme; then
+		if readlink --canonicalize "$TEST_DEV_SYSFS/device" | grep -q nvme; then
 			local blkdev
 			local ctrldev
 			# First get the controller device from the namespace blockdev
 			blkdev="$(echo "$TEST_DEV_SYSFS" | cut -d '/' -f 7)"
 			ctrldev="$(echo "$blkdev" | grep -Eo 'nvme[0-9]+')"
 			# Then get the pci device from the controller device
-			if readlink -f "$ctrldev/device" | grep -1 pci; then
+			if readlink --canonicalize "$ctrldev/device" | grep -1 pci; then
 				return 0
 			fi
 		fi
@@ -391,7 +391,7 @@ _require_test_dev_is_pci() {
 }
 
 _get_pci_from_dev_sysfs() {
-	readlink -f "$1/device" | \
+	readlink --canonicalize "$1/device" | \
 		grep -Eo '[0-9a-f]{4,5}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]' | \
 		tail -1
 }
@@ -401,7 +401,7 @@ _get_pci_dev_from_blkdev() {
 }
 
 _get_pci_parent_from_blkdev() {
-	readlink -f "$TEST_DEV_SYSFS/device" | \
+	readlink --canonicalize "$TEST_DEV_SYSFS/device" | \
 		grep -Eo '[0-9a-f]{4,5}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]' | \
 		tail -2 | head -1
 }
@@ -712,7 +712,7 @@ _real_dev()
 {
 	local dev=$1
 	if [ -b "$dev" ] && [ -L "$dev" ]; then
-		dev=$(readlink -f "$dev")
+		dev=$(readlink --canonicalize "$dev")
 	fi
 	echo "$dev"
 }

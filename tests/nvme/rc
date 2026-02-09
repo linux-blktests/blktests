@@ -72,7 +72,7 @@ group_device_requires() {
 }
 
 _require_test_dev_is_nvme_pci() {
-	if [[ ! "$(readlink -f "$TEST_DEV_SYSFS/device")" =~ devices/pci ]]; then
+	if [[ ! "$(readlink --canonicalize "$TEST_DEV_SYSFS/device")" =~ devices/pci ]]; then
 		SKIP_REASONS+=("$TEST_DEV is not a PCI NVMe device")
 		return 1
 	fi
@@ -80,11 +80,28 @@ _require_test_dev_is_nvme_pci() {
 }
 
 _require_test_dev_is_not_nvme_multipath() {
-	if [[ "$(readlink -f "$TEST_DEV_SYSFS/device")" =~ /nvme-subsystem/ ]]; then
+	if [[ "$(readlink --canonicalize "$TEST_DEV_SYSFS/device")" =~ /nvme-subsystem/ ]]; then
 		SKIP_REASONS+=("$TEST_DEV is a NVMe multipath device")
 		return 1
 	fi
 	return 0
+}
+
+_nvme_dev_support_native_multipath() {
+	if [[ "$(readlink --canonicalize "$TEST_DEV_SYSFS/device")" =~ /nvme-subsystem/ ]]; then
+		return 0
+	fi
+	return 1
+}
+
+_nvme_get_pci_from_dev_sysfs() {
+	if _nvme_dev_support_native_multipath; then
+		readlink --canonicalize "$TEST_DEV_SYSFS"/multipath/nvme*c*n*/device | \
+			grep -Eo '[0-9a-f]{4,5}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]' | \
+			tail -1
+	else
+		_get_pci_dev_from_blkdev
+	fi
 }
 
 _require_test_dev_support_sed() {
@@ -170,12 +187,12 @@ _nvme_get_ctrl_list() {
 	subsys=$(readlink  "${TEST_DEV_SYSFS}/device/subsystem")
 	case $subsys in
 		*/nvme)
-			readlink -f "${TEST_DEV_SYSFS}/device"
+			readlink --canonicalize "${TEST_DEV_SYSFS}/device"
 			;;
 		*/nvme-subsystem)
 			for c in "${TEST_DEV_SYSFS}"/device/nvme*; do
 				[[ -L "$c" ]] || continue
-				[[ -f "$c/dev" ]] && readlink -f "$c"
+				[[ -f "$c/dev" ]] && readlink --canonicalize "$c"
 			done
 			;;
 	esac
