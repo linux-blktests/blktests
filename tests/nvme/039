@@ -31,6 +31,28 @@ last_dmesg()
 		| sed 's/\[.*\] //'
 }
 
+_nvme_admin_passthru()
+{
+	local opt_args=()
+
+	if nvme admin-passthru --help 2>&1 | grep -q -- '--no-ioctl-probing'; then
+		opt_args=(--no-ioctl-probing)
+	fi
+
+	nvme admin-passthru "${opt_args[@]}" "$@"
+}
+
+_nvme_io_passthru()
+{
+	local opt_args=()
+
+	if nvme io-passthru --help 2>&1 | grep -q -- '--no-ioctl-probing'; then
+		opt_args=(--no-ioctl-probing)
+	fi
+
+	nvme io-passthru "${opt_args[@]}" "$@"
+}
+
 inject_unrec_read_on_read()
 {
 	# Inject a 'Unrecovered Read Error' (0x281) status error on a READ
@@ -97,7 +119,7 @@ inject_access_denied_on_identify()
 	# Identify admin command
 	_nvme_enable_err_inject "$1" 0 100 1 0x286 1
 
-	nvme admin-passthru /dev/"$1" --opcode=0x06 --data-len=4096 \
+	_nvme_admin_passthru /dev/"$1" --opcode=0x06 --data-len=4096 \
 	    --cdw10=1 -r 2> /dev/null 1>&2
 
 	_nvme_disable_err_inject "$1"
@@ -118,7 +140,7 @@ inject_invalid_admin_cmd()
 	# Inject a 'Invalid Command Opcode' (0x1) on an invalid command (0x96)
 	 _nvme_enable_err_inject "$1" 0 100 1 0x1 1
 
-	nvme admin-passthru /dev/"$1" --opcode=0x96 --data-len="${LB_SZ}" \
+	 _nvme_admin_passthru /dev/"$1" --opcode=0x96 --data-len="${LB_SZ}" \
 	    --cdw10=1 -r 2> /dev/null 1>&2
 
 	_nvme_disable_err_inject "$1"
@@ -143,7 +165,7 @@ inject_invalid_io_cmd_passthru()
 	# Inject a 'Invalid Command Opcode' (0x1) on a read (0x02)
 	_nvme_enable_err_inject "$ns_dev" 0 100 1 0x1 1
 
-	nvme io-passthru /dev/"$1" --opcode=0x02 --namespace-id="$ns" \
+	_nvme_io_passthru /dev/"$1" --opcode=0x02 --namespace-id="$ns" \
 		--data-len="${LB_SZ}" --read --cdw10=0 --cdw11=0 --cdw12="$2" 2> /dev/null 1>&2
 
 	_nvme_disable_err_inject "$1"
