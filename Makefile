@@ -20,7 +20,7 @@ NPROCS := $(shell nproc)
 
 check:
 	shellcheck -x -e $(SHELLCHECK_EXCLUDE) -f gcc check common/* \
-		tests/*/rc tests/*/[0-9]*[0-9] src/*.sh
+		tests/*/rc tests/*/[0-9]*[0-9] src/*.sh contrib/run_ci
 	shellcheck --exclude=$(SHELLCHECK_EXCLUDE),SC2154 --format=gcc new
 	! grep TODO tests/*/rc tests/*/[0-9]*[0-9]
 	! find -L -name '*.out' -perm /u=x+g=x+o=x -printf '%p is executable\n' | grep .
@@ -30,7 +30,7 @@ check-parallel:
 	@ret=0; \
 	find tests -type f -name '[0-9]*[0-9]' | \
 		xargs -P $(NPROCS) -n 1 shellcheck -x -e $(SHELLCHECK_EXCLUDE) -f gcc || ret=1; \
-	shellcheck -x -e $(SHELLCHECK_EXCLUDE) -f gcc check common/* tests/*/rc src/*.sh || ret=1; \
+	shellcheck -x -e $(SHELLCHECK_EXCLUDE) -f gcc check common/* tests/*/rc src/*.sh contrib/run_ci || ret=1; \
 	shellcheck --exclude=$(SHELLCHECK_EXCLUDE),SC2154 --format=gcc new || ret=1; \
 	grep TODO tests/*/rc tests/*/[0-9]*[0-9] && ret=1; \
 	find -L -name '*.out' -perm /u=x+g=x+o=x -printf '%p is executable\n' | grep . && ret=1; \
