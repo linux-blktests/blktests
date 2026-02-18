@@ -1,0 +1,102 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Western Digital Corporation or its affiliates.
+#
+# Helper script to run blktests for blktests CI
+
+usage () {
+	echo "$0" "[OPTIONS] CONDITION_BASE_URL"
+	echo -e "\tGet blktests run conditions from CONDITION_BASE_URL."
+	echo -e "\tGenerate config file for each condition and run tests."
+	echo -e "\tOPTIONS: -d\t Debug mode."
+	exit 1
+}
+
+DEBUG_MODE=0
+
+if [[ $1 == -d ]]; then
+	shift
+	DEBUG_MODE=1
+fi
+
+(($# != 1)) && usage
+
+COND_URL_BASE=$1
+
+cat_url() {
+	local url=$1
+
+	if [[ $url =~ http ]]; then
+		curl --fail --location --silent "$url"
+	else
+		cat "$url"
+	fi
+}
+
+get_conditions() {
+	local url_base=$1
+	local line
+	local -a conds
+
+	while read -r line; do
+		conds+=("$line")
+	done < <(cat_url "${url_base}/list")
+	echo "${conds[@]}"
+}
+
+dequote() {
+	local str="$1"
+
+	str=${str//\"/}
+	str=${str//\'/}
+	echo "$str"
+}
+
+gen_config() {
+	local url=$1
+	local line check_args
+	local devs
+	local -a test_devs
+	local -a check_args_arr
+
+	check_args=${url##*/}
+
+	rm -f config
+
+	while read -r line; do
+		if [[ $line =~ BLKTESTS_CI_CHECK_ARGS ]]; then
+			check_args=${line##*=}
+			check_args=$(dequote "$check_args")
+		elif [[ $line =~ BLKTESTS_CI_TEST_DEVS ]]; then
+			devs=${line##*=}
+			devs=$(dequote "$devs")
+			for dev in $devs; do
+				test_devs+=("${!dev}")
+			done
+			echo "TEST_DEVS=(" "${test_devs[@]}" ")" >> config
+		else
+			echo "$line" >> config
+		fi
+	done < <(cat_url "$url")
+
+	check_args_arr=(${check_args})
+
+	echo "run_ci: ${url}"
+	if [[ -f ./config ]]; then
+		cat ./config
+	fi
+	if ((DEBUG_MODE)); then
+		echo -e "sudo ./check ${check_args_arr[@]}\n"
+	else
+		sudo ./check "${check_args_arr[@]}"
+		if [[ -f results/failures ]]; then
+			cat results/failures >> all_failures
+		fi
+	fi
+}
+
+rm -f all_failures
+
+for condition in $(get_conditions "$COND_URL_BASE"); do
+	gen_config "$COND_URL_BASE"/"$condition"
+done
