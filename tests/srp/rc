@@ -58,7 +58,7 @@ group_requires() {
 		_have_kver 5 5
 		_have_iproute2 190404
 	fi
-	_have_module scsi_debug
+	_have_loadable_scsi_debug
 	_have_module target_core_iblock
 	_have_module target_core_mod
 	_module_not_in_use scsi_transport_srp

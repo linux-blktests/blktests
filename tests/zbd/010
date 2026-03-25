@@ -15,7 +15,7 @@ requires() {
 	_have_module null_blk
 	_have_module_param scsi_debug zone_cap_mb
 	_have_program mkfs.f2fs
-	_have_module scsi_debug
+	_have_loadable_scsi_debug
 }
 
 test() {

@@ -12,7 +12,7 @@ DESCRIPTION="test scsi atomic writes"
 QUICK=1
 
 requires() {
-	_have_driver scsi_debug
+	_have_scsi_debug
 	_have_xfs_io_atomic_write
 }
 
