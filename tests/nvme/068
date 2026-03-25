@@ -1,0 +1,49 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2025 Yi Zhang <yi.zhang@redhat.com>
+#
+# Test NVMe subsystem-reset command
+#
+# Regression test for below two commits:
+# 210b1f6576e8 nvme-pci: do not directly handle subsys reset fallout
+# 0edb475ac0a7 nvme: fix PCIe subsystem reset controller state transition
+
+. tests/nvme/rc
+
+DESCRIPTION="Test NVMe subsystem-reset command"
+
+requires() {
+	_nvme_requires
+	_have_program nvme
+}
+
+device_requires() {
+	_require_test_dev_is_nvme
+	_require_test_dev_support_subsystem_reset
+}
+
+test_device() {
+	echo "Running ${TEST_NAME}"
+
+	local ctrl_dev
+
+	ctrl_dev=${TEST_DEV%n*}
+
+	# Start nvme subsystem-reset operation
+	if ! nvme subsystem-reset "$ctrl_dev" >> "$FULL" 2>&1; then
+                echo "ERROR: subsystem-reset failed"
+        fi
+
+	# Wait NVMe disk reinitialized
+	sleep 10
+
+	if [ ! -b "$TEST_DEV" ]; then
+		echo "ERROR: $TEST_DEV still not reinitialized after 10 seconds!"
+	fi
+
+	# Start dd write/read operation to check the NVMe disk works as expected
+	dd if=/dev/urandom of="$TEST_DEV" count=1024 bs=1M status=none
+	dd if="$TEST_DEV" of=/dev/null count=1024 bs=1M status=none
+
+	echo "Test complete"
+}

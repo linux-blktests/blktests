@@ -99,6 +99,14 @@ _require_test_dev_support_sed() {
 	return 1
 }
 
+_require_test_dev_support_subsystem_reset() {
+	if ! nvme show-regs "$TEST_DEV" -H | grep -q "NSSRS.*Yes"; then
+		SKIP_REASONS+=("$TEST_DEV doesn't support subsystem-reset operation")
+		return 1
+	fi
+	return 0
+}
+
 _require_nvme_cli_auth() {
 	if ! nvme gen-dhchap-key --nqn nvmf-test-subsys > /dev/null 2>&1 ; then
 		SKIP_REASONS+=("nvme gen-dhchap-key command missing")
