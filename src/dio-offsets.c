@@ -129,9 +129,14 @@ static void init_buffers()
 
 static void __compare(void *a, void *b, size_t size, const char *test)
 {
+	size_t i;
+
 	if (!memcmp(a, b, size))
 		return;
-	err_errno(EIO, "%s: data corruption", test);
+	for (i = 0; i < size; i++)
+		if (((uint8_t *)a)[i] != ((uint8_t *)b)[i])
+			break;
+	err_errno(EIO, "%s: data corruption at offset %zd/%zd", test, i, size);
 }
 #define compare(a, b, size) __compare(a, b, size, __func__)
 
