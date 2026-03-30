@@ -22,9 +22,9 @@ C_TARGETS := \
 	sg/syzkaller1 \
 	zbdioctl
 
-C_URING_TARGETS := miniublk \
-		metadata \
-		nvme-passthru-admin-uring
+C_URING_TARGETS := metadata \
+	nvme-passthru-admin-uring
+C_UBLK_TARGETS := miniublk
 
 HAVE_LIBURING := $(call HAVE_C_MACRO,liburing.h,IORING_OP_URING_CMD)
 HAVE_UBLK_HEADER := $(call HAVE_C_HEADER,linux/ublk_cmd.h,1)
@@ -32,11 +32,18 @@ HAVE_UBLK_HEADER := $(call HAVE_C_HEADER,linux/ublk_cmd.h,1)
 CXX_TARGETS := \
 	discontiguous-io
 
-ifeq ($(HAVE_LIBURING)$(HAVE_UBLK_HEADER), 11)
-TARGETS := $(C_TARGETS) $(CXX_TARGETS) $(C_URING_TARGETS)
-else
-$(info Skip $(C_URING_TARGETS) build due to missing kernel header(v6.0+) or liburing(2.2+))
 TARGETS := $(C_TARGETS) $(CXX_TARGETS)
+
+ifeq ($(HAVE_UBLK_HEADER), 1)
+C_URING_TARGETS += $(C_UBLK_TARGETS)
+else
+$(info Skip $(C_UBLK_TARGETS) build due to missing kernel header(v6.0+))
+endif
+
+ifeq ($(HAVE_LIBURING), 1)
+TARGETS += $(C_URING_TARGETS)
+else
+$(info Skip $(C_URING_TARGETS) build due to missing liburing(2.2+))
 endif
 
 CONFIG_DEFS := $(call HAVE_C_HEADER,linux/blkzoned.h,-DHAVE_LINUX_BLKZONED_H)
