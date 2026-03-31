@@ -1,0 +1,77 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Daan De Meyer
+#
+# Regression test for a race between udev and loop_reread_partitions().
+#
+# When LOOP_CONFIGURE is called with LO_FLAGS_PARTSCAN,
+# disk_force_media_change() used to set GD_NEED_PART_SCAN before the
+# uevent was sent. When udev opened the device in response,
+# blkdev_get_whole() would trigger a partition scan, and then
+# loop_reread_partitions() would scan again. The second scan drops all
+# partitions from the first scan before re-adding them, causing
+# partition devices to briefly disappear.
+#
+# Verify that setting up a loop device with partscan does not produce
+# spurious partition add/remove events.
+
+. tests/loop/rc
+
+DESCRIPTION="check for spurious partition removal when partscan is enabled"
+TIMED=1
+
+requires() {
+	_have_program sfdisk
+	_have_systemd_ver 259
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	truncate -s 3MiB "$TMPDIR/img"
+	sfdisk "$TMPDIR/img" >"$FULL" 2>&1 <<-EOF
+		label: gpt
+		size=1MiB
+	EOF
+
+	local dev
+	dev="$(losetup -f)"
+
+	# Monitor kernel uevents for partition block devices.
+	udevadm monitor --kernel -s block/partition >"$TMPDIR/uevents" 2>&1 &
+	local mon_pid=$!
+	# Give the monitor time to set up its netlink socket.
+	sleep 0.5
+
+	local iterations=0
+	SECONDS=0
+	while ((SECONDS < "${TIMEOUT:-5}")); do
+		if ! losetup -P "$dev" "$TMPDIR/img" 2>>"$FULL"; then
+			continue
+		fi
+		losetup -d "$dev" 2>>"$FULL"
+		((iterations++))
+	done
+
+	sleep 0.5
+	kill "$mon_pid"
+	wait "$mon_pid" 2>/dev/null
+
+	# Each setup+teardown cycle should produce exactly one add and one
+	# remove kernel uevent for the partition device. If the race
+	# triggers, a second partition scan produces an extra remove+add
+	# pair, inflating the counts beyond the number of iterations.
+	local name="${dev##*/}"
+	local adds removes
+	adds=$(grep -c "^KERNEL\[.*\] add.*${name}p" "$TMPDIR/uevents")
+	removes=$(grep -c "^KERNEL\[.*\] remove.*${name}p" "$TMPDIR/uevents")
+
+	if ((adds > iterations)); then
+		echo "Fail: $iterations iterations but $adds add events (expected $iterations)"
+	fi
+	if ((removes > iterations)); then
+		echo "Fail: $iterations iterations but $removes remove events (expected $iterations)"
+	fi
+
+	echo "Test complete"
+}

@@ -603,6 +603,22 @@ _systemd_start_udevd() {
 	return 0
 }
 
+_have_systemd_ver() {
+	local required_ver=${1}
+	local ver
+
+	if ! command -v systemctl &>/dev/null; then
+		SKIP_REASONS+=("systemd is not available")
+		return 1
+	fi
+
+	ver=$(systemctl --version | head -1 | sed 's/systemd //;s/[^0-9].*//')
+	if ((ver < required_ver)); then
+		SKIP_REASONS+=("systemd version is older than ${required_ver}")
+		return 1
+	fi
+}
+
 # Run the given command as NORMAL_USER
 _run_user() {
 	su "$NORMAL_USER" -c "$1"
