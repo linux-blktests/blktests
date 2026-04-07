@@ -1,0 +1,8 @@
+Running nvme/068
+Re-authenticate with original host key
+Renew host key on the controller
+Re-authenticate with new host key
+Renew ctrl key on the controller
+Re-authenticate with new ctrl key
+disconnected 1 controller(s)
+Test complete
