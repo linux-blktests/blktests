@@ -23,7 +23,6 @@ requires() {
 	_have_driver f2fs
 	_have_driver null_blk
 	_have_program fscrypt
-	_have_program getconf
 	_have_program mkfs.f2fs
 	for o in BLK_INLINE_ENCRYPTION_FALLBACK FS_ENCRYPTION_INLINE_CRYPT; do
 		if ! _check_kernel_option "$o"; then
@@ -112,7 +111,7 @@ run_test() {
 	local bio_max_vecs=256
 
 	local page_size
-	page_size=$(getconf PAGE_SIZE)
+	page_size=$(_get_page_size)
 
 	# In bytes.
 	local max_inl_encr_bio_size=$((bio_max_vecs * page_size))

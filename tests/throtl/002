@@ -21,7 +21,7 @@ test() {
 	local io_size_kb block_size
 	local iops=256
 
-	page_size=$(getconf PAGE_SIZE)
+	page_size=$(_get_page_size)
 
 	if ! _set_up_throtl --sector_size "${page_size}"; then
 		return 1;
