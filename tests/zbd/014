@@ -112,7 +112,7 @@ run_test() {
 	local bio_max_vecs=256
 
 	local page_size
-	page_size=$(getconf PAGE_SIZE)
+	page_size=$(_get_page_size)
 
 	# In bytes.
 	local max_inl_encr_bio_size=$((bio_max_vecs * page_size))
