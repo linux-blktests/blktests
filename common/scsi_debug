@@ -57,7 +57,7 @@ _have_scsi_debug_group_number_stats() {
 		SKIP_REASONS+=("scsi_debug does not support group number statistics")
 		ret=1
 	fi
-	modprobe -qr scsi_debug >&/dev/null
+	_patient_rmmod scsi_debug
 	return ${ret}
 }
 
