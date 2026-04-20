@@ -228,5 +228,13 @@ int main(int argc, char **argv)
 		return EFAULT;
 	}
 
+	cmd.opcode = 1;
+	cmd.metadata_len = 4096 * 20;
+	ret = ioctl(fd, NVME_IOCTL_IO_CMD, &cmd);
+	if (ret == 0) {
+			perror("nvme-write (large metadata_len)");
+			return EFAULT;
+	}
+
 	return 0;
 }
