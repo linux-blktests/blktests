@@ -10,7 +10,7 @@ jobs:
         compiler: [gcc, clang]
         arch: [x86_64, x86]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@main
       - name: Install multilib
         run: |
           sudo apt-get update
@@ -28,7 +28,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@main
       - name: Install ShellCheck
         run: |
           curl -L "https://github.com/koalaman/shellcheck/releases/download/stable/shellcheck-stable.linux.x86_64.tar.xz" | tar -xJ shellcheck-stable/shellcheck
