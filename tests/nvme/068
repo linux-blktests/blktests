@@ -1,0 +1,113 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 John Garry
+#
+# Test NVMe multipath delayed removal works as expected. This feature was
+# introduced in commit 62188639ec16 ("nvme-multipath: introduce delayed removal
+# of the multipath head node")
+
+. tests/nvme/rc
+. common/xfs
+
+DESCRIPTION="NVMe multipath delayed removal test"
+
+requires() {
+	_nvme_requires
+	_have_loop
+	_have_module_param_value nvme_core multipath Y
+	_require_nvme_trtype_is_fabrics
+}
+
+set_conditions() {
+	_set_nvme_trtype "$@"
+}
+
+_delayed_nvme_reconnect_ctrl() {
+	sleep 1
+	_nvme_connect_subsys
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	_setup_nvmet
+
+	local nvmedev
+	local ns
+	local bytes_written
+	local refcnt_orig
+	local refcnt
+	_nvmet_target_setup
+
+	_nvme_connect_subsys
+
+	# Part a: Prove that writes fail when no path returns. Any reads or
+	#	  writes are queued during the delayed removal period. If no
+	#	  paths return before the timer expires, then those IOs should
+	#	  fail.
+	#	  During the delayed removal period, ensure that the module
+	#	  refcnt is incremented, to prove that we cannot remove the
+	#	  driver during this period.
+	nvmedev=$(_find_nvme_dev "${def_subsysnqn}")
+	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+	refcnt_orig=$(_module_use_count nvme_core)
+	echo 5 > "/sys/block/${ns}/delayed_removal_secs"
+	_nvme_disconnect_ctrl_sync "${nvmedev}" "${def_subsysnqn}"
+	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+	if [[ "${ns}" = "" ]]; then
+		echo "could not find ns after disconnect"
+	fi
+	refcnt=$(_module_use_count nvme_core)
+	if [ "$refcnt" != "" ] && [ "$refcnt" -le "$refcnt_orig" ]; then
+		echo "module refcount did not increase"
+	fi
+	bytes_written=$(run_xfs_io_pwritev2 /dev/"$ns" 4096)
+	if [ "$bytes_written" == 4096 ]; then
+		echo "wrote successfully after disconnect"
+	fi
+	_nvme_wait_subsys_removed
+	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+	if [[ ! "${ns}" = "" ]]; then
+		echo "found ns after delayed removal"
+	fi
+	refcnt=$(_module_use_count nvme_core)
+	if [ "$refcnt" != "" ] && [ "$refcnt" -ne "$refcnt_orig" ]; then
+		echo "module refcount not as original"
+	fi
+
+	# Part b: Ensure writes for an intermittent disconnect are successful.
+	#	  During an intermittent disconnect, any reads or writes
+	#	  queued should succeed after a path returns.
+	#	  Also ensure module refcount behaviour is as expected, as
+	#	  above.
+	_nvme_connect_subsys
+	nvmedev=$(_find_nvme_dev "${def_subsysnqn}")
+	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+	refcnt_orig=$(_module_use_count nvme_core)
+	echo 5 > "/sys/block/${ns}/delayed_removal_secs"
+	_nvme_disconnect_ctrl_sync "${nvmedev}" "${def_subsysnqn}"
+	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+	if [[ "${ns}" = "" ]]; then
+		echo "could not find ns after disconnect"
+	fi
+	_delayed_nvme_reconnect_ctrl "${nvmedev}" &
+	bytes_written=$(run_xfs_io_pwritev2 /dev/"$ns" 4096)
+	if [ "$bytes_written" != 4096 ]; then
+		echo "could not write successfully with reconnect"
+	fi
+	if ! _nvmf_wait_for_state "${def_subsysnqn}" "live" ; then
+		echo "subsystem did not return"
+	fi
+	refcnt=$(_module_use_count nvme_core)
+	if [ "$refcnt" != "" ] && [ "$refcnt" -ne "$refcnt_orig" ]; then
+		echo "module refcount not as original"
+	fi
+
+	# Final tidy-up
+	echo 0 > "/sys/block/${ns}/delayed_removal_secs"
+	nvmedev=$(_find_nvme_dev "${def_subsysnqn}")
+	_nvme_disconnect_ctrl "${nvmedev}"
+	_nvmet_target_cleanup
+
+	echo "Test complete"
+}

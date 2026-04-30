@@ -117,6 +117,16 @@ _module_not_in_use() {
 	fi
 }
 
+_module_use_count() {
+	local refcnt
+	if [ -f "/sys/module/$1/refcnt" ]; then
+		refcnt="$(cat /sys/module/"$1"/refcnt)"
+		echo "$refcnt"
+		return
+	fi
+	echo ""
+}
+
 _have_module_param() {
 	 _have_driver "$1" || return
 
