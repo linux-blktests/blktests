@@ -302,6 +302,34 @@ _output_status() {
 	echo "]"
 }
 
+_write_json_test_run() {
+	local device
+	local skip_reasons
+
+	if [[ ${TEST_RUN["status"]} == "not run" && -v SKIP_REASONS ]]; then
+		skip_reasons=$(IFS=';'; echo "${SKIP_REASONS[*]}")
+	fi
+	if [[ "${TEST_DEV:-}" ]]; then
+		device="$(basename "$TEST_DEV")"
+	elif [[ "${TEST_DEV_ARRAY:-}" ]]; then
+		local dev
+		local -a devs
+		for dev in "${TEST_DEV_ARRAY[@]}"; do
+			devs+=("${dev##*/}")
+		done
+		device=$(IFS=' '; echo "${devs[*]}")
+	fi
+
+	_write_json_entry "$TEST_NAME" \
+		"${TEST_RUN["status"]}" \
+		"${TEST_RUN["description"]}" \
+		"${TEST_RUN["runtime"]}" \
+		"${TEST_RUN["reason"]:-}" \
+		"${TEST_RUN["exit_status"]:-}" \
+		"$device" \
+		"$skip_reasons"
+}
+
 _output_skip_reasons()
 {
 	for reason in "${SKIP_REASONS[@]}"; do
@@ -521,6 +549,7 @@ _call_test() {
 
 	_write_test_run
 	_output_test_run
+	_write_json_test_run
 
 	if [[ ${TEST_RUN["status"]} = fail ]]; then
 		case "${TEST_RUN["reason"]}" in
@@ -757,7 +786,10 @@ _check_and_call_test_device() {
 	for TEST_DEV in "${TEST_DEVS[@]}"; do
 		if [[ $TEST_DEV == fallback ]]; then
 			if [[ -v SKIP_REASONS ]]; then
+				local skip_reasons
+				skip_reasons=$(IFS=';'; echo "${SKIP_REASONS[*]}")
 				_output_notrun "$TEST_NAME"
+				_write_json_skip_entry "$TEST_NAME" "$skip_reasons"
 				return 0
 			fi
 
@@ -1053,9 +1085,142 @@ declare -a TEST_DEV_ARRAY
 declare -A TEST_DEV_ARRAY_SYSFS_DIRS
 declare -A TEST_CASE_DEV_ARRAY
 declare -A TEST_CASE_DEV_ARRAY_SYSFS_DIRS
+
+declare JSON_OUTPUT_FILE
+declare JSON_OUTPUT_TEMP
+# plain text file with single number for JSON array comma placement
+declare COUNTER_FILE
+
+_init_json_output() {
+	[[ -z $JSON_OUTPUT ]] && return
+
+	JSON_OUTPUT_FILE="$JSON_OUTPUT"
+	JSON_OUTPUT_TEMP=$(mktemp blktests_json_XXXXXX)
+	COUNTER_FILE=$(mktemp blktests_counter_XXXXXX)
+
+	# Create/truncate the JSON file and write opening structure
+	echo '{' > "$JSON_OUTPUT_TEMP"
+	echo '  "results": [' >> "$JSON_OUTPUT_TEMP"
+
+	echo "0" > "$COUNTER_FILE"
+}
+
+_finalize_json_output() {
+	[[ -z $JSON_OUTPUT ]] && return
+
+	# Close the results array
+	echo '  ]' >> "$JSON_OUTPUT_TEMP"
+	# Close the JSON object
+	echo '}' >> "$JSON_OUTPUT_TEMP"
+
+	cp "$JSON_OUTPUT_TEMP" "$JSON_OUTPUT_FILE"
+	rm -f "$COUNTER_FILE" "$JSON_OUTPUT_TEMP"
+}
+
+_inc_counter() {
+	local counter
+
+	counter=$(<"$COUNTER_FILE")
+	((counter++))
+	echo "$counter" > "$COUNTER_FILE"
+	echo "$counter"
+}
+
+_add_json_entry() {
+	local counter=$1
+	local json_entry="$2"
+
+	# Add comma to previous entry if not the first entry
+	if ((counter > 1 )); then
+		# Add comma after the previous closing brace
+		sed -i '$ s/}/},/' "$JSON_OUTPUT_TEMP"
+	fi
+
+	echo "$json_entry" >> "$JSON_OUTPUT_TEMP"
+}
+
+_write_json_entry() {
+	local test_name="$1"
+	local status="$2"
+	local description="$3"
+	local runtime="$4"
+	local reason="$5"
+	local exit_status="$6"
+	local device="$7"
+	local skip_reasons="$8"
+	local counter
+
+	[[ -z $JSON_OUTPUT ]] && return
+
+	counter=$(_inc_counter)
+
+	local json_entry="    {
+      \"name\": \"$test_name\",
+      \"status\": \"$status\",
+      \"description\": \"$description\",
+      \"runtime\": \"$runtime\""
+
+	if [[ -n $reason ]]; then
+		json_entry+=","
+		json_entry+="
+      \"reason\": \"$reason\""
+	fi
+
+	if [[ -n $exit_status ]]; then
+		json_entry+=","
+		json_entry+="
+      \"exit_status\": $exit_status"
+	fi
+
+	if [[ -n $device ]]; then
+		json_entry+=","
+		json_entry+="
+      \"device\": \"$device\""
+	fi
+
+	if [[ -n $skip_reasons ]]; then
+		json_entry+=","
+		json_entry+="
+      \"skip_reasons\": \"$skip_reasons\""
+	fi
+
+	json_entry+="
+    }"
+
+	_add_json_entry "$counter" "$json_entry"
+}
+
+_write_json_skip_entry() {
+	local test_name="$1"
+	local skip_reasons="$2"
+
+	[[ -z $JSON_OUTPUT ]] && return
+
+	counter=$(_inc_counter)
+
+	local json_entry="    {
+      \"name\": \"$test_name\",
+      \"status\": \"not run\",
+      \"description\": \"\",
+      \"runtime\": \"\""
+
+	if [[ -n $skip_reasons ]]; then
+		json_entry+=","
+		json_entry+="
+      \"skip_reasons\": \"$skip_reasons\""
+	fi
+
+	json_entry+="
+    }"
+
+	_add_json_entry "$counter" "$json_entry"
+}
+
 _check() {
 	# shellcheck disable=SC2034
 	SRCDIR="$(realpath src)"
+
+	_init_json_output
 
 	local test_dev test_name
 	local -a all_test_devs_in_array
@@ -1121,6 +1286,8 @@ _check() {
 		(($? != 0)) && ret=1
 	fi
 
+	_finalize_json_output
+
 	return $ret
 }
 
@@ -1171,6 +1338,8 @@ Test runs:
   -x, --exclude=TEST	 exclude a test (or test group) from the list of
 			 tests to run
 
+  -j, --json=FILE	 write test results in JSON format to the given file
+
 Miscellaneous:
   -c, --config=FILE	 load configuration from FILE instead of the default
 			 (\"./config\"); if this option is used multiple times,
@@ -1192,7 +1361,7 @@ Miscellaneous:
 
 _check_dependencies
 
-if ! TEMP=$(getopt -o 'do:q::x:c:th' --long 'device-only,quick::,exclude:,output:,config:,cmd-trace,help' -n "$0" -- "$@"); then
+if ! TEMP=$(getopt -o 'do:q::x:c:tj:h' --long 'device-only,quick::,exclude:,output:,config:,cmd-trace,json:,help' -n "$0" -- "$@"); then
 	exit 1
 fi
 
@@ -1220,6 +1389,10 @@ while true; do
 		'-x'|'--exclude')
 			# shellcheck disable=SC2190
 			OPTION_EXCLUDE+=("$2")
+			shift 2
+			;;
+		'-j'|'--json')
+			OPTION_JSON="$2"
 			shift 2
 			;;
 		'-c'|'--config')
@@ -1257,6 +1430,8 @@ fi
 DEVICE_ONLY="${OPTION_DEVICE_ONLY:-${DEVICE_ONLY:-0}}"
 
 OUTPUT="${OPTION_OUTPUT:-${OUTPUT:-results}}"
+
+JSON_OUTPUT="${OPTION_JSON:-${JSON_OUTPUT:-}}"
 
 QUICK_RUN="${OPTION_QUICK_RUN:-${QUICK_RUN:-0}}"
 if [[ -n $OPTION_QUICK_RUN && $OPTION_QUICK_RUN -ne 0 ]]; then
