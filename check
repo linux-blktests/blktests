@@ -550,6 +550,7 @@ _call_test() {
 	_write_test_run
 	_output_test_run
 	_write_json_test_run
+	_update_stat
 
 	if [[ ${TEST_RUN["status"]} = fail ]]; then
 		case "${TEST_RUN["reason"]}" in
@@ -1090,6 +1091,95 @@ declare JSON_OUTPUT_FILE
 declare JSON_OUTPUT_TEMP
 # plain text file with single number for JSON array comma placement
 declare COUNTER_FILE
+# plain text file with 5 numbers (total, passed, failed, not_run, time)
+declare STATS_FILE
+
+_init_stats() {
+	[[ -z $STATS && -z $JSON_OUTPUT ]] && return
+
+	STATS_FILE=$(mktemp -p "${TMPDIR:-/tmp}" blktests_stats_XXXXXX)
+	# Initialize summary statistics to 0
+	_write_stats 0 0 0 0 0
+}
+
+_finalize_stats() {
+	 [[ -z $STATS ]] && return
+
+	local -a stats
+	mapfile -t stats < "$STATS_FILE"
+
+	echo "total: ${stats[0]}"
+	echo "passed: ${stats[1]}"
+	echo "failed: ${stats[2]}"
+	echo "not run: ${stats[3]}"
+	echo "time: ${stats[4]}s"
+
+	rm -f "$STATS_FILE"
+}
+
+# write 5 numbers (total, passed, failed, not_run, time)
+_write_stats() {
+	local e
+
+	for e in "${@}"; do
+		echo "${e/ /}"
+	done > "$STATS_FILE"
+}
+
+_increment_stat() {
+	local field=$1
+	local -a stats
+	mapfile -t stats < "$STATS_FILE"
+
+	case "$field" in
+	total)
+		((stats[0]++))
+		;;
+	passed)
+		((stats[1]++))
+		;;
+	failed)
+		((stats[2]++))
+		;;
+	notrun)
+		((stats[3]++))
+		;;
+	esac
+
+	_write_stats "${stats[@]}"
+}
+
+_add_runtime() {
+	local runtime=$1
+	local -a stats
+
+	mapfile -t stats < "$STATS_FILE"
+	stats[4]=$(awk "BEGIN {print ${stats[4]} + ${runtime%s}}")
+	_write_stats "${stats[@]}"
+}
+
+# Update summary statistics in file if stats tracking is enabled
+_update_stat() {
+	[[ -z $STATS_FILE ]] && return
+
+	_increment_stat total
+	case ${TEST_RUN["status"]} in
+	"pass")
+		_increment_stat passed
+		;;
+	"fail")
+		_increment_stat failed
+		;;
+	"not run")
+		_increment_stat notrun
+		;;
+	esac
+
+	# Add runtime to total
+	if [[ -n ${TEST_RUN["runtime"]} ]]; then
+		_add_runtime "${TEST_RUN["runtime"]}"
+	fi
+}
 
 _init_json_output() {
 	[[ -z $JSON_OUTPUT ]] && return
@@ -1109,7 +1199,28 @@ _finalize_json_output() {
 	[[ -z $JSON_OUTPUT ]] && return
 
 	# Close the results array
-	echo '  ]' >> "$JSON_OUTPUT_TEMP"
+	echo '  ],' >> "$JSON_OUTPUT_TEMP"
+
+	# Read summary statistics from file
+	local -a stats
+	mapfile -t stats < "$STATS_FILE"
+	local json_total="${stats[0]}"
+	local json_passed="${stats[1]}"
+	local json_failed="${stats[2]}"
+	local json_notrun="${stats[3]}"
+	local json_total_time="${stats[4]}"
+
+	# Write summary object
+	local summary="  \"summary\": {
+	    \"total\": $json_total,
+	    \"passed\": $json_passed,
+	    \"failed\": $json_failed,
+	    \"not run\": $json_notrun,
+	    \"time\": \"${json_total_time}s\"
+	  }"
+
+	echo "$summary" >> "$JSON_OUTPUT_TEMP"
+
 	# Close the JSON object
 	echo '}' >> "$JSON_OUTPUT_TEMP"
 
@@ -1221,6 +1332,7 @@ _check() {
 	SRCDIR="$(realpath src)"
 
 	_init_json_output
+	_init_stats
 
 	local test_dev test_name
 	local -a all_test_devs_in_array
@@ -1287,6 +1399,7 @@ _check() {
 	fi
 
 	_finalize_json_output
+	_finalize_stats
 
 	return $ret
 }
@@ -1340,6 +1453,8 @@ Test runs:
 
   -j, --json=FILE	 write test results in JSON format to the given file
 
+  -s, --stats		 print summary statistics to stdout
+
 Miscellaneous:
   -c, --config=FILE	 load configuration from FILE instead of the default
 			 (\"./config\"); if this option is used multiple times,
@@ -1361,7 +1476,7 @@ Miscellaneous:
 
 _check_dependencies
 
-if ! TEMP=$(getopt -o 'do:q::x:c:tj:h' --long 'device-only,quick::,exclude:,output:,config:,cmd-trace,json:,help' -n "$0" -- "$@"); then
+if ! TEMP=$(getopt -o 'do:q::x:c:tj:sh' --long 'device-only,quick::,exclude:,output:,config:,cmd-trace,json:,stats,help' -n "$0" -- "$@"); then
 	exit 1
 fi
 
@@ -1394,6 +1509,10 @@ while true; do
 		'-j'|'--json')
 			OPTION_JSON="$2"
 			shift 2
+			;;
+		'-s'|'--stats')
+			OPTION_STATS=1
+			shift
 			;;
 		'-c'|'--config')
 			# shellcheck source=/dev/null
@@ -1432,6 +1551,7 @@ DEVICE_ONLY="${OPTION_DEVICE_ONLY:-${DEVICE_ONLY:-0}}"
 OUTPUT="${OPTION_OUTPUT:-${OUTPUT:-results}}"
 
 JSON_OUTPUT="${OPTION_JSON:-${JSON_OUTPUT:-}}"
+STATS="${OPTION_STATS:-${STATS:-}}"
 
 QUICK_RUN="${OPTION_QUICK_RUN:-${QUICK_RUN:-0}}"
 if [[ -n $OPTION_QUICK_RUN && $OPTION_QUICK_RUN -ne 0 ]]; then
