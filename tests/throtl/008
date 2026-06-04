@@ -1,0 +1,107 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Google LLC
+#
+# Test cgroup iocost IOPS limiting.
+
+. tests/throtl/rc
+. common/fio
+
+DESCRIPTION="test cgroup iocost controller limits"
+
+requires() {
+	_have_fio
+	_have_kernel_option BLK_CGROUP_IOCOST
+}
+
+set_conditions() {
+	_set_throtl_blkdev_type "$@"
+}
+
+run_test() {
+	# dev_t is global to make it available in the caller.
+	dev_t=$(<"/sys/block/${THROTL_DEV}/dev")
+	if [[ -z "$dev_t" ]]; then
+		echo "Failed to get major:minor for ${THROTL_DEV}"
+		return 1
+	fi
+
+	# Configure iocost controller globally for the device
+	# min=100.00 max=100.00 forces vrate to be fixed at 100%
+	if ! echo "$dev_t enable=1 min=100.00 max=100.00" > "$(_cgroup2_base_dir)/io.cost.qos"; then
+		echo "Failed to configure io.cost.qos"
+		return 1
+	fi
+
+	# Limit read iops to 100 and write iops to 10.
+	# Setting rbps/wbps to 0 means they are ignored (costs calculated purely based on IOPS)
+	if ! echo "$dev_t ctrl=user model=linear rbps=0 rseqiops=100 rrandiops=100 wbps=0 wseqiops=10 wrandiops=10" > "$(_cgroup2_base_dir)/io.cost.model"; then
+		echo "Failed to configure io.cost.model"
+		return 1
+	fi
+
+	# 1. Run FIO read test
+	local -a FIO_PERF_FIELDS
+	FIO_PERF_FIELDS=("read iops")
+	if ! _fio_perf --bs=4k --rw=randread --name=read-test --filename="/dev/${THROTL_DEV}" \
+			--ioengine=libaio --direct=1 --iodepth=64 --time_based --runtime=10 \
+			--cgroup="blktests/${THROTL_DIR}" &> "${FULL}"; then
+		echo "FIO read test failed"
+		return 1
+	fi
+	cat "$TMPDIR/fio_perf" >> "$FULL"
+	local read_iops=${TEST_RUN["read iops"]}
+	if [[ -z "$read_iops" ]]; then
+		echo "Read IOPS is empty"
+		return 1
+	elif (( "$(echo "$read_iops < 90 || $read_iops > 110" | bc -l)" )); then
+		echo "Read IOPS $read_iops not in expected range [90, 110]"
+		return 1
+	fi
+
+	# 2. Run FIO write test
+	FIO_PERF_FIELDS=("write iops")
+	if ! _fio_perf --bs=4k --rw=randwrite --name=write-test --filename="/dev/${THROTL_DEV}" \
+			--ioengine=libaio --direct=1 --iodepth=64 --time_based --runtime=10 \
+			--cgroup="blktests/${THROTL_DIR}" &> "${FULL}"; then
+		echo "FIO write test failed"
+		return 1
+	fi
+	cat "$TMPDIR/fio_perf" >> "$FULL"
+	local write_iops=${TEST_RUN["write iops"]}
+	if [[ -z "$write_iops" ]]; then
+		echo "Write IOPS is empty"
+		return 1
+	elif (( "$(echo "$write_iops < 8 || $write_iops > 12" | bc -l)" )); then
+		echo "Write IOPS $write_iops not in expected range [8, 12]"
+		return 1
+	fi
+}
+
+test() {
+	local test_status
+
+	echo "Running ${TEST_NAME}"
+
+	if ! _set_up_throtl; then
+		echo "_set_up_throtl failed"
+		return 1
+	fi
+
+	run_test
+	test_status=$?
+
+	if [ -n "$dev_t" ]; then
+		echo "$dev_t enable=0" > "$(_cgroup2_base_dir)/io.cost.qos"
+		echo "$dev_t ctrl=auto" > "$(_cgroup2_base_dir)/io.cost.model"
+	fi
+
+	_clean_up_throtl
+
+	if [ "$test_status" -eq 0 ]; then
+		echo "Test complete"
+	else
+		echo "Test failed"
+		return 1
+	fi
+}
