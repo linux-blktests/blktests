@@ -126,11 +126,11 @@ _set_up_throtl() {
 
 	THROTL_CLEAR_BASE_SUBTREE_CONTROL_IO=
 	THROTL_CLEAR_CGROUP2_DIR_CONTROL_IO=
-	if ! grep -q io "$(_cgroup2_base_dir)/cgroup.subtree_control"; then
+	if ! grep -wq io "$(_cgroup2_base_dir)/cgroup.subtree_control"; then
 		echo "+io" > "$(_cgroup2_base_dir)/cgroup.subtree_control"
 		THROTL_CLEAR_BASE_SUBTREE_CONTROL_IO=true
 	fi
-	if ! grep -q io "$CGROUP2_DIR/cgroup.subtree_control"; then
+	if ! grep -wq io "$CGROUP2_DIR/cgroup.subtree_control"; then
 		echo "+io" > "$CGROUP2_DIR/cgroup.subtree_control"
 		THROTL_CLEAR_CGROUP2_DIR_CONTROL_IO=true
 	fi
