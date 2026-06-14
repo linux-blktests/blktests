@@ -143,6 +143,7 @@ test_device() {
 
 	test_desc="TEST 8 - perform a pwritev2 with size of sysfs_atomic_unit_max_bytes + 512 "
 	test_desc+="bytes with RWF_ATOMIC flag - pwritev2 should not be succesful"
+	bytes_to_write=$(( sysfs_atomic_unit_max_bytes + sysfs_logical_block_size ))
 	bytes_written=$(run_xfs_io_pwritev2_atomic "$TEST_DEV" "$bytes_to_write")
 	if [ "$bytes_written" = "" ]
 	then

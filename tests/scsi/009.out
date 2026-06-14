@@ -6,6 +6,7 @@ TEST 4 - check sysfs atomic_write_unit_min_bytes = scsi_debug atomic_wr_gran - p
 TEST 5 - check statx stx_atomic_write_unit_min - pass
 TEST 6 - check statx stx_atomic_write_unit_max - pass
 TEST 7 - perform a pwritev2 with size of sysfs_atomic_unit_max_bytes with RWF_ATOMIC flag - pwritev2 should be succesful - pass
+pwrite: Invalid argument
 TEST 8 - perform a pwritev2 with size of sysfs_atomic_unit_max_bytes + 512 bytes with RWF_ATOMIC flag - pwritev2 should not be succesful - pass
 TEST 9 - perform a pwritev2 with size of sysfs_atomic_unit_min_bytes with RWF_ATOMIC flag - pwritev2 should be succesful - pass
 pwrite: Invalid argument
