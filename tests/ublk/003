@@ -7,6 +7,7 @@
 . tests/ublk/rc
 
 DESCRIPTION="test mounting block device exported by ublk"
+QUICK=1
 
 requires() {
 	_have_program mkfs.ext4

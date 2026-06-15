@@ -9,6 +9,7 @@
 . tests/ublk/rc
 
 DESCRIPTION="test ublk recovery with one time daemon kill"
+QUICK=1
 
 _run() {
 	local type=$1

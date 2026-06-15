@@ -7,6 +7,7 @@
 . tests/ublk/rc
 
 DESCRIPTION="test ublk crash with delete after dead confirmation"
+QUICK=1
 
 _run() {
 	local type=$1
