@@ -562,13 +562,8 @@ _have_systemctl_unit() {
 	return 0
 }
 
-# Get system page size from kernel conguration
 _get_page_size() {
-	local page_shift
-
-	page_shift=$(_get_kernel_option PAGE_SHIFT)
-
-	echo $((1<< page_shift))
+	getconf PAGE_SIZE
 }
 
 # Check if the system page size matches the required size (in bytes).
