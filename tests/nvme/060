@@ -19,11 +19,16 @@ set_conditions() {
 	_set_nvme_trtype "$@"
 }
 
+filter_state_write_msg() {
+	grep --invert-match "state: No such file or directory"
+}
+
 nvmet_debug_trigger_reset() {
 	local nvmet_subsystem="$1"
 	local dfs_path="${NVMET_DFS}/${nvmet_subsystem}"
 
-	find "${dfs_path}" -maxdepth 1 -type d -name 'ctrl*' -exec sh -c 'echo "fatal" > "$1/state"' _ {} \;
+	find "${dfs_path}" -maxdepth 1 -type d -name 'ctrl*' -exec sh -c \
+	     'echo "fatal" > "$1/state" ' _ {} \; |& filter_state_write_msg
 }
 
 nvmet_reset_loop() {
