@@ -5,5 +5,6 @@ TEST 3 - Verify statx is correctly reporting atomic_unit_max_bytes - pass
 TEST 4 - Verify statx is correctly reporting atomic_unit_min_bytes - pass
 TEST 5 - perform a pwritev2 with size of sysfs_atomic_unit_min_bytes with RWF_ATOMIC flag - pwritev2 should  be successful - pass
 TEST 6 - perform a pwritev2 with size of sysfs_atomic_unit_max_bytes with RWF_ATOMIC flag - pwritev2 should  be successful - pass
+pwrite: Invalid argument
 TEST 7 - perform a pwritev2 with size of sysfs_atomic_unit_max_bytes + logical block with RWF_ATOMIC flag - pwritev2 should not be successful - pass
 Test complete
