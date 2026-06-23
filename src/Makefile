@@ -8,6 +8,10 @@ HAVE_C_MACRO = $(shell if echo "$(H)include <$(1)>" |	\
 		$(CC) $(CFLAGS) -E - 2>&1 /dev/null | grep $(2) > /dev/null 2>&1; \
 		then echo 1;else echo 0; fi)
 
+HAVE_C_DEF = $(shell if echo -e "$(H)include <$(1)>\n#ifdef $(2)\nHAVE_$(2)\n#endif" | \
+		$(CC) $(CFLAGS) -E - 2>&1 /dev/null | grep HAVE_$(2) > /dev/null 2>&1; \
+		then echo 1;else echo 0; fi)
+
 C_TARGETS := \
 	dio-offsets \
 	loblksize \
@@ -27,6 +31,7 @@ C_UBLK_TARGETS := miniublk
 
 HAVE_LIBURING := $(call HAVE_C_MACRO,liburing.h,IORING_OP_URING_CMD)
 HAVE_UBLK_HEADER := $(call HAVE_C_HEADER,linux/ublk_cmd.h,1)
+HAVE_NEW_UBLK_INTF := $(call HAVE_C_DEF,linux/ublk_cmd.h,UBLK_U_CMD_START_DEV)
 
 CXX_TARGETS := \
 	discontiguous-io
@@ -37,7 +42,11 @@ SYZKALLER_TARGETS := \
 TARGETS := $(C_TARGETS) $(CXX_TARGETS) $(SYZKALLER_TARGETS)
 
 ifeq ($(HAVE_UBLK_HEADER), 1)
+ifeq ($(HAVE_NEW_UBLK_INTF), 1)
 C_URING_TARGETS += $(C_UBLK_TARGETS)
+else
+$(info Skip $(C_UBLK_TARGETS) build due to missing new ublk interface(v6.4+))
+endif
 else
 $(info Skip $(C_UBLK_TARGETS) build due to missing kernel header(v6.0+))
 endif

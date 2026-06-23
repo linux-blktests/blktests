@@ -294,7 +294,7 @@ static int __ublk_ctrl_cmd(struct ublk_dev *dev,
 int ublk_ctrl_stop_dev(struct ublk_dev *dev)
 {
 	struct ublk_ctrl_cmd_data data = {
-		.cmd_op	= UBLK_CMD_STOP_DEV,
+		.cmd_op	= UBLK_U_CMD_STOP_DEV,
 	};
 
 	return __ublk_ctrl_cmd(dev, &data);
@@ -304,7 +304,7 @@ int ublk_ctrl_start_dev(struct ublk_dev *dev,
 		int daemon_pid)
 {
 	struct ublk_ctrl_cmd_data data = {
-		.cmd_op	= UBLK_CMD_START_DEV,
+		.cmd_op	= UBLK_U_CMD_START_DEV,
 		.flags	= CTRL_CMD_HAS_DATA,
 	};
 
@@ -316,7 +316,7 @@ int ublk_ctrl_start_dev(struct ublk_dev *dev,
 int ublk_ctrl_add_dev(struct ublk_dev *dev)
 {
 	struct ublk_ctrl_cmd_data data = {
-		.cmd_op	= UBLK_CMD_ADD_DEV,
+		.cmd_op	= UBLK_U_CMD_ADD_DEV,
 		.flags	= CTRL_CMD_HAS_BUF,
 		.addr = (__u64)&dev->dev_info,
 		.len = sizeof(struct ublksrv_ctrl_dev_info),
@@ -328,7 +328,7 @@ int ublk_ctrl_add_dev(struct ublk_dev *dev)
 int ublk_ctrl_del_dev(struct ublk_dev *dev)
 {
 	struct ublk_ctrl_cmd_data data = {
-		.cmd_op = UBLK_CMD_DEL_DEV,
+		.cmd_op = UBLK_U_CMD_DEL_DEV,
 		.flags = 0,
 	};
 
@@ -338,7 +338,7 @@ int ublk_ctrl_del_dev(struct ublk_dev *dev)
 int ublk_ctrl_get_info(struct ublk_dev *dev)
 {
 	struct ublk_ctrl_cmd_data data = {
-		.cmd_op	= UBLK_CMD_GET_DEV_INFO,
+		.cmd_op	= UBLK_U_CMD_GET_DEV_INFO,
 		.flags	= CTRL_CMD_HAS_BUF,
 		.addr = (__u64)&dev->dev_info,
 		.len = sizeof(struct ublksrv_ctrl_dev_info),
@@ -351,7 +351,7 @@ int ublk_ctrl_set_params(struct ublk_dev *dev,
 		struct ublk_params *params)
 {
 	struct ublk_ctrl_cmd_data data = {
-		.cmd_op	= UBLK_CMD_SET_PARAMS,
+		.cmd_op	= UBLK_U_CMD_SET_PARAMS,
 		.flags	= CTRL_CMD_HAS_BUF,
 		.addr = (__u64)params,
 		.len = sizeof(*params),
@@ -364,7 +364,7 @@ static int ublk_ctrl_get_params(struct ublk_dev *dev,
 		struct ublk_params *params)
 {
 	struct ublk_ctrl_cmd_data data = {
-		.cmd_op	= UBLK_CMD_GET_PARAMS,
+		.cmd_op	= UBLK_U_CMD_GET_PARAMS,
 		.flags	= CTRL_CMD_HAS_BUF,
 		.addr = (__u64)params,
 		.len = sizeof(*params),
@@ -378,7 +378,7 @@ static int ublk_ctrl_get_params(struct ublk_dev *dev,
 static int ublk_ctrl_start_user_recover(struct ublk_dev *dev)
 {
 	struct ublk_ctrl_cmd_data data = {
-		.cmd_op	= UBLK_CMD_START_USER_RECOVERY,
+		.cmd_op	= UBLK_U_CMD_START_USER_RECOVERY,
 		.flags	= 0,
 	};
 
@@ -389,7 +389,7 @@ static int ublk_ctrl_end_user_recover(struct ublk_dev *dev,
 		int daemon_pid)
 {
 	struct ublk_ctrl_cmd_data data = {
-		.cmd_op	= UBLK_CMD_END_USER_RECOVERY,
+		.cmd_op	= UBLK_U_CMD_END_USER_RECOVERY,
 		.flags	= CTRL_CMD_HAS_DATA,
 	};
 
@@ -624,9 +624,9 @@ static int ublk_queue_io_cmd(struct ublk_queue *q,
 		return 0;
 
 	if (io->flags & UBLKSRV_NEED_COMMIT_RQ_COMP)
-		cmd_op = UBLK_IO_COMMIT_AND_FETCH_REQ;
+		cmd_op = UBLK_U_IO_COMMIT_AND_FETCH_REQ;
 	else if (io->flags & UBLKSRV_NEED_FETCH_RQ)
-		cmd_op = UBLK_IO_FETCH_REQ;
+		cmd_op = UBLK_U_IO_FETCH_REQ;
 
 	sqe = io_uring_get_sqe(&q->ring);
 	if (!sqe) {
@@ -637,7 +637,7 @@ static int ublk_queue_io_cmd(struct ublk_queue *q,
 
 	cmd = (struct ublksrv_io_cmd *)ublk_get_sqe_cmd(sqe);
 
-	if (cmd_op == UBLK_IO_COMMIT_AND_FETCH_REQ)
+	if (io->flags & UBLKSRV_NEED_COMMIT_RQ_COMP)
 		cmd->result = io->result;
 
 	/* These fields should be written once, never change */
@@ -650,7 +650,7 @@ static int ublk_queue_io_cmd(struct ublk_queue *q,
 	cmd->addr	= (__u64)io->buf_addr;
 	cmd->q_id	= q->q_id;
 
-	user_data = build_user_data(tag, cmd_op, 0, 0);
+	user_data = build_user_data(tag, _IOC_NR(cmd_op), 0, 0);
 	io_uring_sqe_set_data64(sqe, user_data);
 
 	io->flags = 0;
@@ -658,7 +658,7 @@ static int ublk_queue_io_cmd(struct ublk_queue *q,
 	q->cmd_inflight += 1;
 
 	ublk_dbg(UBLK_DBG_IO_CMD, "%s: (qid %d tag %u cmd_op %u) iof %x stopping %d\n",
-			__func__, q->q_id, tag, cmd_op,
+			__func__, q->q_id, tag, _IOC_NR(cmd_op),
 			io->flags, !!(q->state & UBLKSRV_QUEUE_STOPPING));
 	return 1;
 }
