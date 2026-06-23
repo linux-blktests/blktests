@@ -112,6 +112,7 @@ struct ublk_dev {
 	int fds[2];	/* fds[0] points to /dev/ublkcN */
 	int nr_fds;
 	int ctrl_fd;
+	bool use_ioctl;
 	struct io_uring ring;
 };
 
@@ -235,7 +236,7 @@ static inline int ublk_setup_ring(struct io_uring *r, int depth,
 
 static inline void ublk_ctrl_init_cmd(struct ublk_dev *dev,
 		struct io_uring_sqe *sqe,
-		struct ublk_ctrl_cmd_data *data)
+		struct ublk_ctrl_cmd_data *data, __u32 cmd_op)
 {
 	struct ublksrv_ctrl_dev_info *info = &dev->dev_info;
 	struct ublksrv_ctrl_cmd *cmd = (struct ublksrv_ctrl_cmd *)ublk_get_sqe_cmd(sqe);
@@ -255,9 +256,14 @@ static inline void ublk_ctrl_init_cmd(struct ublk_dev *dev,
 	cmd->dev_id = info->dev_id;
 	cmd->queue_id = -1;
 
-	ublk_set_sqe_cmd_op(sqe, data->cmd_op);
+	ublk_set_sqe_cmd_op(sqe, cmd_op);
 
 	io_uring_sqe_set_data(sqe, cmd);
+}
+
+static void ublk_update_ioctl_encoding(struct ublk_dev *dev)
+{
+	dev->use_ioctl = !!(dev->dev_info.flags & UBLK_F_CMD_IOCTL_ENCODE);
 }
 
 static int __ublk_ctrl_cmd(struct ublk_dev *dev,
@@ -265,7 +271,11 @@ static int __ublk_ctrl_cmd(struct ublk_dev *dev,
 {
 	struct io_uring_sqe *sqe;
 	struct io_uring_cqe *cqe;
+	__u32 cmd_op = data->cmd_op;
 	int ret = -EINVAL;
+
+	if (!dev->use_ioctl)
+		cmd_op = _IOC_NR(cmd_op);
 
 	sqe = io_uring_get_sqe(&dev->ring);
 	if (!sqe) {
@@ -273,7 +283,7 @@ static int __ublk_ctrl_cmd(struct ublk_dev *dev,
 		return ret;
 	}
 
-	ublk_ctrl_init_cmd(dev, sqe, data);
+	ublk_ctrl_init_cmd(dev, sqe, data, cmd_op);
 
 	ret = io_uring_submit(&dev->ring);
 	if (ret < 0) {
@@ -321,8 +331,19 @@ int ublk_ctrl_add_dev(struct ublk_dev *dev)
 		.addr = (__u64)&dev->dev_info,
 		.len = sizeof(struct ublksrv_ctrl_dev_info),
 	};
+	int ret;
 
-	return __ublk_ctrl_cmd(dev, &data);
+	ret = __ublk_ctrl_cmd(dev, &data);
+	if (ret < 0) {
+		/* retry with legacy opcode on older kernels */
+		dev->use_ioctl = false;
+		ret = __ublk_ctrl_cmd(dev, &data);
+	}
+
+	if (ret >= 0)
+		ublk_update_ioctl_encoding(dev);
+
+	return ret;
 }
 
 int ublk_ctrl_del_dev(struct ublk_dev *dev)
@@ -343,8 +364,19 @@ int ublk_ctrl_get_info(struct ublk_dev *dev)
 		.addr = (__u64)&dev->dev_info,
 		.len = sizeof(struct ublksrv_ctrl_dev_info),
 	};
+	int ret;
 
-	return __ublk_ctrl_cmd(dev, &data);
+	ret = __ublk_ctrl_cmd(dev, &data);
+	if (ret < 0 && dev->use_ioctl) {
+		/* retry with legacy opcode on older kernels */
+		dev->use_ioctl = false;
+		ret = __ublk_ctrl_cmd(dev, &data);
+	}
+
+	if (ret >= 0)
+		ublk_update_ioctl_encoding(dev);
+
+	return ret;
 }
 
 int ublk_ctrl_set_params(struct ublk_dev *dev,
@@ -452,6 +484,8 @@ static struct ublk_dev *ublk_ctrl_init()
 	struct ublk_dev *dev = (struct ublk_dev *)calloc(1, sizeof(*dev));
 	struct ublksrv_ctrl_dev_info *info = &dev->dev_info;
 	int ret;
+
+	dev->use_ioctl = true; /* use ioctl opcodes by default */
 
 	dev->ctrl_fd = open(CTRL_DEV, O_RDWR);
 	if (dev->ctrl_fd < 0) {
@@ -627,6 +661,9 @@ static int ublk_queue_io_cmd(struct ublk_queue *q,
 		cmd_op = UBLK_U_IO_COMMIT_AND_FETCH_REQ;
 	else if (io->flags & UBLKSRV_NEED_FETCH_RQ)
 		cmd_op = UBLK_U_IO_FETCH_REQ;
+
+	if (!q->dev->use_ioctl)
+		cmd_op = _IOC_NR(cmd_op);
 
 	sqe = io_uring_get_sqe(&q->ring);
 	if (!sqe) {
