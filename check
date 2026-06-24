@@ -1118,6 +1118,7 @@ _check_dependencies() {
 	required_commands_and_packages[blockdev]="util-linux"
 	required_commands_and_packages[fio]="fio"
 	required_commands_and_packages[udevadm]="systemd-udev"
+	required_commands_and_packages[getconf]="glibc-common or libc-bin"
 
 	for cmd in "${!required_commands_and_packages[@]}"; do
 		command -v "$cmd" &> /dev/null && continue

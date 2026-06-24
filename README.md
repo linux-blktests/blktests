@@ -19,6 +19,7 @@ The dependencies are minimal, but make sure you have them installed:
 - fio
 - gcc
 - make
+- getconf
 - systemd-udev (udevadm)
 
 Some tests require the following:
