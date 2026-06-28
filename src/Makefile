@@ -8,7 +8,7 @@ HAVE_C_MACRO = $(shell if echo "$(H)include <$(1)>" |	\
 		$(CC) $(CFLAGS) -E - 2>&1 /dev/null | grep $(2) > /dev/null 2>&1; \
 		then echo 1;else echo 0; fi)
 
-HAVE_C_DEF = $(shell if echo -e "$(H)include <$(1)>\n#ifdef $(2)\nHAVE_$(2)\n#endif" | \
+HAVE_C_DEF = $(shell if echo -e "$(H)include <$(1)>\n$(H)ifdef $(2)\nHAVE_$(2)\n$(H)endif" | \
 		$(CC) $(CFLAGS) -E - 2>&1 /dev/null | grep HAVE_$(2) > /dev/null 2>&1; \
 		then echo 1;else echo 0; fi)
 
