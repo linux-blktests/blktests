@@ -206,6 +206,8 @@ test_device() {
 	inject_invalid_status_on_read "${ns_dev}"
 	inject_write_fault_on_write "${ns_dev}"
 
+	udevadm settle
+
 	if [ -e "$TEST_DEV_SYSFS/passthru_err_log_enabled" ]; then
 		_nvme_passthru_logging_setup "${ns_dev}" "${ctrl_dev}"
 
