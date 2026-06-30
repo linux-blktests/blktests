@@ -1,0 +1,9 @@
+Running block/044
+Testing unload without rules
+Testing valid rules
+pwrite: Cannot allocate memory
+pread: Input/output error
+Testing invalid rules
+tests/block/044: line 56: echo: write error: Invalid argument
+tests/block/044: line 57: echo: write error: Invalid argument
+Test complete

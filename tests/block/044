@@ -1,0 +1,62 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0+
+# Copyright (c) 2026 Christoph Hellwig.
+#
+# Basic block error injection test.
+
+. tests/block/rc
+. common/scsi_debug
+
+DESCRIPTION="basic block error injection test"
+QUICK=1
+
+requires()
+{
+	_have_kernel_option BLK_ERROR_INJECTION
+	_have_loadable_scsi_debug
+	_have_program xfs_io
+}
+
+# load and remove scsi_debug once to test the static_key bug in the
+# initial commit
+_test_load_unload()
+{
+	if ! _init_scsi_debug dev_size_mb=500; then
+		return 1
+	fi
+	echo "Testing unload without rules"
+	_exit_scsi_debug
+}
+
+_test_rules()
+{
+	if ! _init_scsi_debug dev_size_mb=500; then
+		return 1
+	fi
+
+	local dev=${SCSI_DEBUG_DEVICES[0]}
+	local debugfs_file="/sys/kernel/debug/block/$dev/error_injection"
+
+	echo "Testing valid rules"
+	echo "add,op=WRITE,status=RESOURCE,start=0,nr_sectors=8" > "$debugfs_file"
+	echo "add,op=READ,status=IOERR,start=16,nr_sectors=8" > "$debugfs_file"
+	xfs_io -d -c 'pwrite -q 0 4096' /dev/"$dev"
+	xfs_io -d -c 'pread -q 0 4096' /dev/"$dev"
+	xfs_io -d -c 'pwrite -q 4096 4096' /dev/"$dev"
+	xfs_io -d -c 'pread -q 8192 8192' /dev/"$dev"
+
+	echo "Testing invalid rules"
+	echo "op=READ,status=IOERR" > "$debugfs_file"
+	echo "add,op=READ,status=EIO,start=32" > "$debugfs_file"
+	_exit_scsi_debug
+}
+
+test()
+{
+	echo "Running ${TEST_NAME}"
+
+	_test_load_unload
+	_test_rules
+
+	echo "Test complete"
+}
