@@ -37,13 +37,13 @@ test() {
 	local rand_io_size
 	local ns
 
-	hostkey="$(nvme gen-dhchap-key -n "${def_subsysnqn}" 2> /dev/null)"
+	hostkey="$(nvme gen-dhchap-key -m 3 -n "${def_subsysnqn}" 2> /dev/null)"
 	if [ -z "$hostkey" ] ; then
 		echo "failed to generate host key"
 		return 1
 	fi
 
-	ctrlkey="$(nvme gen-dhchap-key -n "${def_subsysnqn}" 2> /dev/null)"
+	ctrlkey="$(nvme gen-dhchap-key -m 3 -n "${def_subsysnqn}" 2> /dev/null)"
 	if [ -z "$ctrlkey" ] ; then
 		echo "failed to generate ctrl key"
 		return 1
@@ -68,7 +68,7 @@ test() {
 
 	echo "Renew host key on the controller"
 
-	new_hostkey="$(nvme gen-dhchap-key --nqn "${def_subsysnqn}" 2> /dev/null)"
+	new_hostkey="$(nvme gen-dhchap-key -m 3 -n "${def_subsysnqn}" 2> /dev/null)"
 
 	_set_nvmet_hostkey "${def_hostnqn}" "${new_hostkey}"
 
@@ -78,7 +78,7 @@ test() {
 
 	echo "Renew ctrl key on the controller"
 
-	new_ctrlkey="$(nvme gen-dhchap-key --nqn "${def_subsysnqn}" 2> /dev/null)"
+	new_ctrlkey="$(nvme gen-dhchap-key -m 3 -n "${def_subsysnqn}" 2> /dev/null)"
 
 	_set_nvmet_ctrlkey "${def_hostnqn}" "${new_ctrlkey}"
 
