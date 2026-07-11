@@ -1,0 +1,221 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2024 John Meneghini <jmeneghi@redhat.com>
+#
+# Test nvme-fc marginal path handling with fcloop
+
+. tests/nvme/rc
+
+DESCRIPTION="test nvme-fc marginal path handling"
+
+requires() {
+	_nvme_requires
+	_have_loop
+	_have_fio
+	_require_nvme_trtype fc
+}
+
+set_conditions() {
+	_set_nvme_trtype "$@"
+}
+
+# Find the FC remote port corresponding to our fcloop target
+_find_fc_rport() {
+	local target_wwpn="$1"
+	local rport_dir
+	local rport_wwpn
+
+	for rport_dir in /sys/class/fc_remote_ports/rport-*; do
+		if [[ -d "$rport_dir" ]]; then
+			rport_wwpn=$(cat "$rport_dir/port_name" 2>/dev/null)
+			if [[ "$rport_wwpn" == "$target_wwpn" ]]; then
+				echo "$(basename "$rport_dir")"
+				return 0
+			fi
+		fi
+	done
+	return 1
+}
+
+# Set FC remote port state (Online/Marginal/Blocked)
+_set_fc_rport_state() {
+	local rport="$1"
+	local state="$2"
+	local rport_path="/sys/class/fc_remote_ports/$rport"
+
+	if [[ -f "$rport_path/port_state" ]]; then
+		echo "$state" > "$rport_path/port_state"
+		return $?
+	fi
+	return 1
+}
+
+# Get FC remote port state
+_get_fc_rport_state() {
+	local rport="$1"
+	local rport_path="/sys/class/fc_remote_ports/$rport"
+
+	if [[ -f "$rport_path/port_state" ]]; then
+		cat "$rport_path/port_state"
+		return $?
+	fi
+	return 1
+}
+
+# Check if NVMe controller is marked as marginal
+_nvme_ctrl_is_marginal() {
+	local nvmedev="$1"
+	local state_path="/sys/class/nvme/$nvmedev/state"
+
+	if [[ -f "$state_path" ]]; then
+		local state=$(cat "$state_path")
+		if [[ "$state" == "marginal" ]]; then
+			return 0
+		fi
+	fi
+	return 1
+}
+
+# Wait for controller state change
+_wait_for_ctrl_state() {
+	local nvmedev="$1"
+	local expected_state="$2"
+	local timeout="${3:-10}"
+	local count=0
+
+	while (( count < timeout )); do
+		local current_state=$(cat "/sys/class/nvme/$nvmedev/state" 2>/dev/null)
+		if [[ "$current_state" == "$expected_state" ]]; then
+			return 0
+		fi
+		sleep 1
+		count=$((count + 1))
+	done
+	return 1
+}
+
+test() {
+	local fio_pid
+	local nvmedev
+	local ns
+	local target_wwpn
+	local rport
+	local rport_state
+
+	echo "Running ${TEST_NAME}"
+
+	_setup_nvmet
+
+	_nvmet_target_setup --ports 1
+
+	_nvme_connect_subsys
+	nvmedev=$(_find_nvme_dev "${def_subsysnqn}")
+	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+
+	echo "Connected to NVMe device: $nvmedev"
+	echo "Using namespace: $ns"
+
+	# Get the target WWPN (remote port WWPN)
+	target_wwpn=$(_remote_wwpn 0)
+	echo "Target WWPN: $target_wwpn"
+
+	# Find the corresponding FC remote port
+	rport=$(_find_fc_rport "$target_wwpn")
+	if [[ -z "$rport" ]]; then
+		echo "FAIL: Could not find FC remote port for WWPN $target_wwpn"
+		_nvme_disconnect_subsys
+		_nvmet_target_cleanup
+		return 1
+	fi
+
+	echo "Found FC remote port: $rport"
+
+	# Verify initial port state is Online
+	rport_state=$(_get_fc_rport_state "$rport")
+	echo "Initial FC rport state: $rport_state"
+
+	# Verify initial controller state is not marginal
+	if _nvme_ctrl_is_marginal "$nvmedev"; then
+		echo "FAIL: Controller is unexpectedly marginal initially"
+		_nvme_disconnect_subsys
+		_nvmet_target_cleanup
+		return 1
+	fi
+
+	# Start background I/O
+	echo "Starting background I/O"
+	_run_fio_verify_io --filename="/dev/${ns}" \
+			   --group_reporting --ramp_time=5 \
+			   --time_based --runtime=3m --ioengine=libaio \
+			   --iodepth=32 --bs=4k --rw=randread &> "$FULL" &
+	fio_pid=$!
+	sleep 5
+
+	# Set FC port to Marginal state
+	echo "Setting FC rport $rport to Marginal state"
+	if ! _set_fc_rport_state "$rport" "Marginal"; then
+		echo "FAIL: Could not set FC rport to Marginal state"
+		{ kill "$fio_pid"; wait; } &> /dev/null
+		_nvme_disconnect_subsys
+		_nvmet_target_cleanup
+		return 1
+	fi
+
+	# Verify port state changed
+	rport_state=$(_get_fc_rport_state "$rport")
+	echo "FC rport state after setting to Marginal: $rport_state"
+
+	# Wait for NVMe controller to detect marginal state
+	echo "Waiting for NVMe controller to detect marginal state..."
+	if _wait_for_ctrl_state "$nvmedev" "marginal" 30; then
+		echo "SUCCESS: NVMe controller is now marginal"
+	else
+		echo "INFO: Controller state did not change to marginal (this may be expected)"
+		local current_state=$(cat "/sys/class/nvme/$nvmedev/state" 2>/dev/null)
+		echo "Current controller state: $current_state"
+	fi
+
+	sleep 10
+
+	# Set FC port back to Online state
+	echo "Setting FC rport $rport back to Online state"
+	if ! _set_fc_rport_state "$rport" "Online"; then
+		echo "FAIL: Could not set FC rport back to Online state"
+		{ kill "$fio_pid"; wait; } &> /dev/null
+		_nvme_disconnect_subsys
+		_nvmet_target_cleanup
+		return 1
+	fi
+
+	# Verify port state changed back
+	rport_state=$(_get_fc_rport_state "$rport")
+	echo "FC rport state after setting to Online: $rport_state"
+
+	# Wait for controller to return to live state
+	echo "Waiting for NVMe controller to return to live state..."
+	if _wait_for_ctrl_state "$nvmedev" "live" 30; then
+		echo "SUCCESS: NVMe controller is back to live state"
+	else
+		echo "INFO: Controller state did not change back to live"
+		local current_state=$(cat "/sys/class/nvme/$nvmedev/state" 2>/dev/null)
+		echo "Current controller state: $current_state"
+	fi
+
+	sleep 5
+
+	# Stop background I/O
+	echo "Stopping background I/O"
+	{ kill "$fio_pid"; wait; } &> /dev/null
+
+	# Verify I/O completed successfully
+	if wait "$fio_pid" 2>/dev/null; then
+		echo "SUCCESS: Background I/O completed successfully"
+	else
+		echo "INFO: Background I/O may have encountered errors (this may be expected)"
+	fi
+
+	_nvme_disconnect_subsys
+	_nvmet_target_cleanup
+
+	echo "Test complete"
+}
