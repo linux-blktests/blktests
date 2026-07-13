@@ -27,6 +27,16 @@ resv_report() {
 		grep -E "gen|rtype|regctl|regctlext|cntlid|rcsts|rkey"
 }
 
+nvme_resv() {
+	local cmd=$1
+	local test_dev=$2
+	shift 2
+	if ! nvme resv-"${cmd}" "$test_dev" "$@" >>"${FULL}" 2>&1; then
+		echo "FAIL: nvme resv-${cmd} failed on $test_dev with args: $*"
+		return 1
+	fi
+}
+
 test_resv() {
 	local ns=$1
 	local report_arg="--cdw11=1"
@@ -38,34 +48,34 @@ test_resv() {
 
 	echo "Register"
 	resv_report "${test_dev}" "${report_arg}"
-	nvme resv-register "${test_dev}" --nrkey=4 --rrega=0
+	nvme_resv register "${test_dev}" --nrkey=4 --rrega=0
 	resv_report "${test_dev}" "${report_arg}"
 
 	echo "Replace"
-	nvme resv-register "${test_dev}" --crkey=4 --nrkey=5 --rrega=2
+	nvme_resv register "${test_dev}" --crkey=4 --nrkey=5 --rrega=2
 	resv_report "${test_dev}" "${report_arg}"
 
 	echo "Unregister"
-	nvme resv-register "${test_dev}" --crkey=5 --rrega=1
+	nvme_resv register "${test_dev}" --crkey=5 --rrega=1
 	resv_report "${test_dev}" "${report_arg}"
 
 	echo "Acquire"
-	nvme resv-register "${test_dev}" --nrkey=4 --rrega=0
-	nvme resv-acquire "${test_dev}" --crkey=4 --rtype=1 --racqa=0
+	nvme_resv register "${test_dev}" --nrkey=4 --rrega=0
+	nvme_resv acquire "${test_dev}" --crkey=4 --rtype=1 --racqa=0
 	resv_report "${test_dev}" "${report_arg}"
 
 	echo "Preempt"
-	nvme resv-acquire "${test_dev}" --crkey=4 --prkey=4 --rtype=2 --racqa=1
+	nvme_resv acquire "${test_dev}" --crkey=4 --prkey=4 --rtype=2 --racqa=1
 	resv_report "${test_dev}" "${report_arg}"
 
 	echo "Release"
-	nvme resv-release "${test_dev}" --crkey=4 --rtype=2 --rrela=0
+	nvme_resv release "${test_dev}" --crkey=4 --rtype=2 --rrela=0
 	resv_report "${test_dev}" "${report_arg}"
 
 	echo "Clear"
-	nvme resv-acquire "${test_dev}" --crkey=4 --rtype=1 --racqa=0
+	nvme_resv acquire "${test_dev}" --crkey=4 --rtype=1 --racqa=0
 	resv_report "${test_dev}" "${report_arg}"
-	nvme resv-release "${test_dev}" --crkey=4 --rrela=1
+	nvme_resv release "${test_dev}" --crkey=4 --rrela=1
 }
 
 test() {
