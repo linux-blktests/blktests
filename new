@@ -279,6 +279,9 @@ test() {
 # - Use the \$() form of command substitution instead of backticks.
 # - Use bash for loops instead of seq. E.g., for ((i = 0; i < 10; i++)), not
 #   for i in \$(seq 0 9).
+# - Use long command options instead of short options for readability and
+#   stability: e.g., 'nvme io-passthru --opcode X' is recommended over
+#   'nvme io-passthru -o X'.
 #
 # Please run \`make check\` after your test is done to check for shell
 # scripting errors and other mistakes.
