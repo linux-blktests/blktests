@@ -16,3 +16,7 @@ as per the [Developer Certificate of Origin](https://developercertificate.org/).
 Please run `make check` before submitting a new test. This runs the
 [shellcheck](https://github.com/koalaman/shellcheck) static analysis tool and
 some other sanity checks.
+
+When you add new files, choose a license from GPL-3.0+ or GPL-2.0+. The main
+license of blktests is GPL-3.0+. GPL-3.0+ is recommended. GPL-2.0+ is allowed
+but GPL-2.0 cannot be applied.
