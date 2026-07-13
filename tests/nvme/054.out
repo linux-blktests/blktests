@@ -54,5 +54,4 @@ regctlext[0] :
   cntlid     : ffff
   rcsts      : 1
   rkey       : 4
-disconnected 1 controller(s)
 Test complete

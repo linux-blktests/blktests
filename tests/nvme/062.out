@@ -1,10 +1,6 @@
 Running nvme/062
 Test unencrypted connection w/ tls not required
-disconnected 1 controller(s)
 Test encrypted connection w/ tls not required
-disconnected 1 controller(s)
 Test unencrypted connection w/ tls required (should fail)
-disconnected 0 controller(s)
 Test encrypted connection w/ tls required
-disconnected 1 controller(s)
 Test complete

@@ -1,18 +1,10 @@
 Running nvme/043
 Testing hash hmac(sha256)
-disconnected 1 controller(s)
 Testing hash hmac(sha384)
-disconnected 1 controller(s)
 Testing hash hmac(sha512)
-disconnected 1 controller(s)
 Testing DH group ffdhe2048
-disconnected 1 controller(s)
 Testing DH group ffdhe3072
-disconnected 1 controller(s)
 Testing DH group ffdhe4096
-disconnected 1 controller(s)
 Testing DH group ffdhe6144
-disconnected 1 controller(s)
 Testing DH group ffdhe8192
-disconnected 1 controller(s)
 Test complete

@@ -1,16 +1,9 @@
 Running nvme/042
 Testing hmac 0
-disconnected 1 controller(s)
 Testing hmac 1
-disconnected 1 controller(s)
 Testing hmac 2
-disconnected 1 controller(s)
 Testing hmac 3
-disconnected 1 controller(s)
 Testing key length 32
-disconnected 1 controller(s)
 Testing key length 48
-disconnected 1 controller(s)
 Testing key length 64
-disconnected 1 controller(s)
 Test complete

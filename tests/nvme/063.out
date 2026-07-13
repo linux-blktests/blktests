@@ -1,7 +1,5 @@
 Running nvme/063
 Test secure concatenation with SHA256
 Reset controller
-disconnected 1 controller(s)
 Test secure concatenation with SHA384
-disconnected 1 controller(s)
 Test complete
