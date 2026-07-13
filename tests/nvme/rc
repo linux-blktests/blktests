@@ -225,7 +225,7 @@ _create_nvmet_passthru() {
 	mkdir -p "${subsys_path}"
 	_set_attr 0 "${subsys_path}/attr_allow_any_host"
 
-	_test_dev_nvme_ctrl > "${passthru_path}/device_path"
+	_set_attr "$(_test_dev_nvme_ctrl)" "${passthru_path}/device_path"
 	_set_attr 1 "${passthru_path}/enable"
 	if [[ -f "${passthru_path}/clear_ids" ]]; then
 		_set_attr 1 "${passthru_path}/clear_ids"
