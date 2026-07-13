@@ -701,7 +701,7 @@ _unload_modules() {
 }
 
 _check_and_call_test() {
-	local postfix
+	local postfix ret
 
 	if declare -fF requires >/dev/null; then
 		requires
@@ -710,7 +710,9 @@ _check_and_call_test() {
 	[[ -n $COND_DESC ]] && postfix=_${COND_DESC//[ =]/_}
 	RESULTS_DIR="$OUTPUT/nodev${postfix}"
 	_call_test test
+	ret=$?
 	_unload_modules
+	return $ret
 }
 
 _check_and_call_test_device() {
