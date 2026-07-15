@@ -1,0 +1,79 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Daan De Meyer
+#
+# Verify that partitions added manually with BLKPG do not remain after a loop
+# device without LO_FLAGS_PARTSCAN is detached and reopened.
+#
+# Regression test for commit c4f4c0fc551c ("loop: remove manually added
+# partitions on detach").
+
+. tests/loop/rc
+
+DESCRIPTION="remove manually added partitions before loop device reuse"
+QUICK=1
+
+loop_device=
+udevd_stopped=
+
+requires() {
+	_have_program sfdisk
+	_have_program partx
+}
+
+cleanup() {
+	if [[ -n "$loop_device" ]]; then
+		losetup --detach "$loop_device" &>/dev/null
+	fi
+	if [[ -n "$udevd_stopped" ]]; then
+		_systemd_start_udevd
+	fi
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+	_register_test_cleanup cleanup
+
+	truncate --size=3MiB "$TMPDIR/img"
+	sfdisk "$TMPDIR/img" >"$FULL" 2>&1 <<-EOF
+		label: gpt
+		size=1MiB
+	EOF
+
+	# Keep userspace from removing the partition on our behalf.
+	if _systemctl_unit_is_active systemd-udevd; then
+		_systemd_stop_udevd
+		udevd_stopped=1
+	fi
+
+	if ! loop_device="$(losetup --find --show "$TMPDIR/img")"; then
+		echo "Failed to configure loop device"
+		echo "Test complete"
+		return
+	fi
+	local name="${loop_device##*/}"
+	local partition="/sys/block/$name/${name}p1"
+
+	# Add a partition without setting LO_FLAGS_PARTSCAN on the loop device.
+	if ! partx --add "$loop_device" >>"$FULL" 2>&1; then
+		echo "Failed to add partition"
+	elif [[ ! -e "$partition" ]]; then
+		echo "Partition was not created"
+	fi
+
+	if ! losetup --detach "$loop_device" >>"$FULL" 2>&1; then
+		echo "Failed to detach loop device"
+		echo "Test complete"
+		return
+	fi
+	loop_device=
+
+	# Historically, opening the unbound device performed a lazy cleanup.
+	# The partition may also have been removed eagerly during detach.
+	: >"/dev/$name"
+	if [[ -e "$partition" ]]; then
+		echo "Partition still exists after loop device reuse"
+	fi
+
+	echo "Test complete"
+}
