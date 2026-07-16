@@ -15,6 +15,7 @@ QUICK=1
 requires() {
 	_have_program nvme
 	_have_kernel_options FAULT_INJECTION FAULT_INJECTION_DEBUG_FS
+	_have_debugfs
 }
 
 device_requires() {
