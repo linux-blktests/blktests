@@ -223,6 +223,14 @@ _have_configfs() {
 	return 0
 }
 
+_have_debugfs() {
+	if ! findmnt -t debugfs /sys/kernel/debug >/dev/null; then
+		SKIP_REASONS+=("debugfs is not mounted at /sys/kernel/debug")
+		return 1
+	fi
+	return 0
+}
+
 # Check if the specified kernel config files are available.
 _have_kernel_config_file() {
 	if [[ ! -f /proc/config.gz && ! -f /boot/config-$(uname -r) ]]; then
