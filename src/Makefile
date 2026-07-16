@@ -13,6 +13,7 @@ HAVE_C_DEF = $(shell if echo -e "$(H)include <$(1)>\n$(H)ifdef $(2)\nHAVE_$(2)\n
 		then echo 1;else echo 0; fi)
 
 C_TARGETS := \
+	bio-bounce \
 	dio-offsets \
 	loblksize \
 	loop_change_fd \

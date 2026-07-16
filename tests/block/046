@@ -1,0 +1,64 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 0wnerD1ed
+#
+# Regression test for commit e7b8b3c5b2a6 ("block: align down bounces bios").
+# Trigger a partial XFS direct read that used to unpin one user page twice.
+
+. tests/block/rc
+. common/xfs
+
+DESCRIPTION="test partial bounced direct read bvec alignment"
+QUICK=1
+
+requires() {
+	_have_xfs
+	_have_kernel_option IO_URING
+	_have_kernel_option PROC_PAGE_MONITOR
+}
+
+device_requires() {
+	local stable_writes=0
+
+	_test_dev_suits_xfs
+	_require_test_dev_size 300m
+	if [[ -r ${TEST_DEV_SYSFS}/queue/stable_writes ]]; then
+		stable_writes=$(<"${TEST_DEV_SYSFS}/queue/stable_writes")
+	fi
+	if ((stable_writes == 0)) &&
+	   [[ ! -r ${TEST_DEV_SYSFS}/integrity/format ]]; then
+		SKIP_REASONS+=("${TEST_DEV} does not require stable writes")
+		return 1
+	fi
+	if (( $(blockdev --getss "${TEST_DEV}") > $(getconf PAGESIZE) )); then
+		SKIP_REASONS+=("logical block size exceeds the system page size")
+		return 1
+	fi
+}
+
+test_device() {
+	local block_size
+	local mount_dir="${TMPDIR}/mnt"
+	local test_file="${mount_dir}/target"
+
+	echo "Running ${TEST_NAME}"
+
+	if ! _xfs_mkfs_and_mount "${TEST_DEV}" "${mount_dir}" \
+		>>"${FULL}" 2>&1; then
+		echo "failed to create and mount XFS"
+		return
+	fi
+	dd if=/dev/zero of="${test_file}" bs=1M count=1 conv=fsync \
+		status=none
+	block_size=$(blockdev --getss "${TEST_DEV}")
+
+	_io_uring_enable
+	if ! src/bio-bounce bounce-read "${block_size}" "${test_file}"; then
+		echo "bounce-read helper failed"
+	fi
+	_io_uring_restore
+
+	umount "${mount_dir}" >>"${FULL}" 2>&1
+	rm -rf "${mount_dir}"
+	echo "Test complete"
+}

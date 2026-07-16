@@ -1,0 +1,22 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 0wnerD1ed
+#
+# Regression test for patch "block: fix aligning of bounced dio read bios".
+# Exercise the case where alignment removes the only extracted bvec.
+
+. tests/block/rc
+
+DESCRIPTION="test direct I/O full-trim bvec alignment"
+QUICK=1
+CAN_BE_ZONED=1
+
+test_device() {
+	echo "Running ${TEST_NAME}"
+
+	if ! src/bio-bounce full-trim "${TEST_DEV}"; then
+		echo "full-trim helper failed"
+	fi
+
+	echo "Test complete"
+}
