@@ -1,0 +1,61 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 John Garry
+#
+# Test NVMe multipath nvme-generic cdev lifetime behaves as expected.
+
+. tests/nvme/rc
+
+DESCRIPTION="NVMe multipath cdev lifetime test"
+CHECK_DMESG=1
+QUICK=1
+
+requires() {
+	_nvme_requires
+	_have_loop
+	_have_module_param_value nvme_core multipath Y
+	_require_nvme_trtype_is_fabrics
+	_have_kernel_options KASAN
+}
+
+set_conditions() {
+	_set_nvme_trtype "$@"
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	local nvmedev
+	local loops=0
+	local quit=0
+	local nvmegeneric
+
+	_setup_nvmet
+	_nvmet_target_setup
+	_nvme_connect_subsys
+
+	nvmedev=$(_find_nvme_dev "${def_subsysnqn}")
+	nvmegeneric=$(_nvme_find_subsys_nvme_generic)
+
+	trap 'quit=1' USR2
+	# nvme-delay-ioctl will open the nvme-generic cdev, wait for teardown,
+	# and then issue an ioctl.
+	# We tear down the nvme-subsystem in the foreground so we can catch
+	# if the ioctl triggers a use-after-free KASAN warn.
+	src/nvme-delay-ioctl "/dev/$nvmegeneric" &
+
+	while [ "$quit" -ne 1 ]; do
+		sleep 0.1
+		((loops++))
+		if [[ "$loops" == "100" ]]; then
+			echo "no signal"
+			break
+		fi
+	done
+
+	_nvme_disconnect_ctrl "${nvmedev}"
+	_nvmet_target_cleanup
+	wait "$(jobs -p)"
+
+	echo "Test complete"
+}
