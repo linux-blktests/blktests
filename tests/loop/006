@@ -69,5 +69,10 @@ test() {
 	fi
 	losetup -d "$loop_dev"
 
+	# Let udev catch up on the attach/detach/change-fd before
+	# handing control back, so it doesn't leave a backlog for
+	# whatever test runs next.
+	udevadm settle
+
 	echo "Test complete"
 }
