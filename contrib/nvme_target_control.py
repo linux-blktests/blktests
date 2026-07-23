@@ -117,6 +117,11 @@ def target_setup(args):
     subprocess.call(['python3', nvmetcli, '--remote=' + remote,
                      'restore', args.subsysnqn + '.json'])
 
+def target_add_ports(_):
+    if config['main']['skip_setup_cleanup']:
+        return
+
+    print("Warning: add-ports is not implemented yet.")
 
 def target_cleanup(args):
     if config['main']['skip_setup_cleanup']:
@@ -158,6 +163,15 @@ def build_parser():
     setup.add_argument('--ctrlkey', default='')
     setup.add_argument('--hostkey', default='')
     setup.set_defaults(func=target_setup)
+
+    setup = sub.add_parser('add-ports')
+    setup.add_argument('--ports', required=True)
+    setup.add_argument('--subsysnqn', required=True)
+    setup.add_argument('--subsys-uuid', required=True)
+    setup.add_argument('--hostnqn', required=True)
+    setup.add_argument('--ctrlkey', default='')
+    setup.add_argument('--hostkey', default='')
+    setup.set_defaults(func=target_add_ports)
 
     cleanup = sub.add_parser('cleanup')
     cleanup.add_argument('--subsysnqn', required=True)

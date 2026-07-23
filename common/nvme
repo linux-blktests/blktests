@@ -1102,6 +1102,85 @@ _nvmet_target_setup() {
 			"${hostkey}" "${ctrlkey}"
 }
 
+_nvmet_target_add_ports() {
+	local ctrlkey=""
+	local hostkey=""
+	local subsysnqn="${def_subsysnqn}"
+	local subsys_uuid
+	local port p
+	local num_ports=1
+	local tls="none"
+	local cfs_path
+
+	while [[ $# -gt 0 ]]; do
+		case $1 in
+			--ctrlkey)
+				ctrlkey="$2"
+				shift 2
+				;;
+			--hostkey)
+				hostkey="$2"
+				shift 2
+				;;
+			--subsysnqn)
+				subsysnqn="$2"
+				shift 2
+				;;
+			--subsys-uuid)
+				subsys_uuid="$2"
+				shift 2
+				;;
+			--ports)
+				num_ports="$2"
+				shift 2
+				;;
+			--tls)
+				tls="not-required"
+				shift 1
+				;;
+			--force-tls)
+				tls="required"
+				shift 1
+				;;
+			*)
+				echo "WARNING: unknown argument: $1"
+				shift
+				;;
+		esac
+	done
+
+	if [[ -n "${nvme_target_control}" ]]; then
+		if [[ -n "${hostkey}" ]]; then
+			ARGS+=(--hostkey "${hostkey}")
+		fi
+		if [[ -n "${ctrlkey}" ]]; then
+			ARGS+=(--ctrkey "${ctrlkey}")
+		fi
+
+		"${nvme_target_control}" add-ports \
+					 --ports "${num_ports}" \
+					 --subsysnqn "${subsysnqn}" \
+					 --subsys-uuid "${subsys_uuid:-$def_subsys_uuid}" \
+					 --hostnqn "${def_hostnqn}" \
+					 "${ARGS[@]}" &> /dev/null
+		echo "'${nvme_target_control} add-ports' is a stub"
+		return
+	fi
+
+	cfs_path="${NVMET_CFS}/subsystems/${subsystem}"
+	if [[ ! -d "${cfs_path}" ]]; then
+		echo "Can not add ports to a non-existent subsystem. subsystem not found"
+		return 1;
+	fi
+
+	p=0
+	while (( p < num_ports )); do
+		port="$(_create_nvmet_port ${tls})"
+		_add_nvmet_subsys_to_port "${port}" "${subsysnqn}"
+		p=$(( p + 1 ))
+	done
+}
+
 _nvmet_target_cleanup() {
 	local ports
 	local port
