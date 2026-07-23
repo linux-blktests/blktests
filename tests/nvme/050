@@ -17,6 +17,7 @@ requires() {
 	_have_fio
 	_nvme_requires
 	_have_kernel_options FAIL_IO_TIMEOUT FAULT_INJECTION_DEBUG_FS
+	_have_debugfs
 }
 
 test_device() {
