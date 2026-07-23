@@ -1,0 +1,169 @@
+# blktests example configuration file
+#
+# Copy this file to "config" (or pass it with "./check -c config.example")
+# and adjust the settings for your environment.
+#
+# The config file is sourced as a bash script, so shell syntax applies.
+# Configuration file settings take precedence over environment variables.
+# Command line options take precedence over both.
+
+# TEST_DEVS
+#   Array of block devices to use for tests that require a test device.
+#   WARNING: tests are destructive and will overwrite all data on these devices.
+#   If unset or empty, only tests that do not require a device will run.
+#   May also be set as a whitespace-separated string instead of an array.
+#
+# TEST_DEVS=(/dev/nvme0n1 /dev/sdb)
+
+# TEST_CASE_DEV_ARRAY
+#   Associative array that maps test case names (or glob patterns) to a
+#   space-separated list of block devices for tests that require multiple
+#   devices simultaneously (i.e., tests implementing test_device_array()).
+#   WARNING: tests are destructive and will overwrite all data on these devices.
+#
+# declare -A TEST_CASE_DEV_ARRAY
+# TEST_CASE_DEV_ARRAY[md/003]="/dev/nvme0n1 /dev/nvme1n1 /dev/nvme2n1 /dev/nvme3n1"
+# TEST_CASE_DEV_ARRAY[bcache/*]="/dev/nvme0n1 /dev/vdb /dev/vdc"
+# TEST_CASE_DEV_ARRAY[meta/02*]="/dev/nvme0n1 /dev/nvme1n1"
+
+# DEVICE_ONLY
+#   When set to 1, only run tests that exercise a configured test device
+#   (i.e., tests implementing test_device() or test_device_array()).
+#   Equivalent to the -d / --device-only command line option.
+#   Requires TEST_DEVS or TEST_CASE_DEV_ARRAY to be set.
+#
+# DEVICE_ONLY=1
+
+# EXCLUDE
+#   Array of test names or test group names to skip.
+#   Tests specified explicitly on the command line are always run even if
+#   listed here.  May also be set as a whitespace-separated string instead
+#   of an array.  Equivalent to the -x / --exclude command line option.
+#
+# EXCLUDE=(loop block/001)
+
+# QUICK_RUN
+#   When set to 1, only run tests that are marked as quick or that honour
+#   the TIMEOUT setting, and set a time limit for each such test.
+#   Equivalent to the -q / --quick command line option.
+#
+# QUICK_RUN=1
+
+# TIMEOUT
+#   Maximum runtime in seconds for each test (only meaningful when
+#   QUICK_RUN is enabled).  Defaults to 30 when -q is given without an
+#   explicit value.
+#
+# TIMEOUT=30
+
+# OUTPUT
+#   Directory where test results are written.  Defaults to "./results".
+#   Equivalent to the -o / --output command line option.
+#
+# OUTPUT=results
+
+# RUN_ZONED_TESTS
+#   When set to 1, test cases that can set up a virtual zoned block device
+#   (e.g., via null_blk) are executed twice: once in non-zoned mode and
+#   once in zoned mode.  Requires CONFIG_BLK_DEV_ZONED in the kernel.
+#
+# RUN_ZONED_TESTS=1
+
+# NORMAL_USER
+#   Name of an unprivileged user account used by test cases that must run
+#   with normal user privileges.  Tests requiring this are skipped when the
+#   variable is unset or empty.
+#
+# NORMAL_USER=blktests_user
+
+# LOGGER_PROG
+#   Path to the logger(1) program used to annotate the system log with
+#   test progress.  Defaults to the first "logger" found in PATH, or
+#   "true" (i.e., a no-op) if none is found.
+#
+# LOGGER_PROG=/usr/bin/logger
+
+# MODPROBE_PATIENT_RM_TIMEOUT_SECONDS
+#   Timeout in seconds for the patient module removal helper used by tests
+#   that load and unload kernel modules.  Defaults to 50.
+#
+# MODPROBE_PATIENT_RM_TIMEOUT_SECONDS=50
+
+# ---------------------------------------------------------------------------
+# NVMe test parameters
+# ---------------------------------------------------------------------------
+
+# NVMET_TRTYPES
+#   Space-separated list of NVMe transport types to exercise.
+#   Supported values: loop (default), tcp, rdma, fc.
+#   The tests are repeated once for each transport listed.
+#   The old name "nvme_trtype" is still accepted but deprecated.
+#
+# NVMET_TRTYPES="loop"
+
+# NVMET_BLKDEV_TYPES
+#   Space-separated list of NVMe target backend types to exercise.
+#   Supported values: device, file.  Defaults to "device file".
+#   The tests are repeated once for each type listed.
+#
+# NVMET_BLKDEV_TYPES="device file"
+
+# NVME_IMG_SIZE
+#   Size of the image file used as the NVMe target backend when
+#   NVMET_BLKDEV_TYPES includes "file".  Supports m/M/g/G suffixes.
+#   Defaults to 1G.  The old name "nvme_img_size" is still accepted but
+#   deprecated.
+#
+# NVME_IMG_SIZE=1G
+
+# NVME_NUM_ITER
+#   Number of iterations performed by NVMe tests that loop internally.
+#   Defaults to 1000.  The old name "nvme_num_iter" is still accepted but
+#   deprecated.
+#
+# NVME_NUM_ITER=1000
+
+# NVME_TARGET_CONTROL
+#   Path to a script that handles NVMe target setup and teardown when
+#   testing against an externally configured real target instead of the
+#   loopback target prepared by blktests.  When set, the generic target
+#   setup/cleanup code is skipped and this script is called instead.
+#   The script must implement the "config", "setup", and "cleanup"
+#   sub-commands described in Documentation/running-tests.md.
+#
+# NVME_TARGET_CONTROL=/path/to/nvme_target_control.sh
+
+# USE_RXE
+#   When set to 1, use the rdma_rxe (soft-RoCE) driver instead of the
+#   default siw (soft-iWARP) driver for RDMA-based NVMe and SRP tests.
+#   The old name "use_rxe" is still accepted but deprecated.
+#
+# USE_RXE=1
+
+# ---------------------------------------------------------------------------
+# NVMe-TCP zero-copy offload parameters
+# ---------------------------------------------------------------------------
+
+# KERNELSRC
+#   Path to the running kernel's source tree.  Required by the NVMe-TCP
+#   zero-copy offload tests to locate the ynl CLI and netlink spec files.
+#
+# KERNELSRC=/usr/src/linux
+
+# NVME_IFACE
+#   Name of the network interface used for the NVMe-TCP connection when
+#   testing zero-copy offload.  Must be the same interface the NVMe
+#   connection is established on.
+#
+# NVME_IFACE=eth0
+
+# ---------------------------------------------------------------------------
+# Blk-throttle test parameters
+# ---------------------------------------------------------------------------
+
+# THROTL_BLKDEV_TYPES
+#   Space-separated list of block device back-ends to use for blk-throttle
+#   tests.  Supported values: nullb (null_blk), sdebug (scsi_debug).
+#   Defaults to "nullb sdebug".
+#
+# THROTL_BLKDEV_TYPES="nullb sdebug"
