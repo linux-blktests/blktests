@@ -1,10 +1,6 @@
 Running nvme/044
 Test host authentication
-disconnected 1 controller(s)
 Test invalid ctrl authentication (should fail)
-disconnected 0 controller(s)
 Test valid ctrl authentication
-disconnected 1 controller(s)
 Test invalid ctrl key (should fail)
-disconnected 0 controller(s)
 Test complete

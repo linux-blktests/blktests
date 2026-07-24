@@ -28,6 +28,7 @@ test() {
 	local size
 	local bs
 	local count
+	local ret
 
 	_nvmet_target_setup
 
@@ -42,7 +43,11 @@ test() {
 	dd if=/dev/urandom of="/dev/${ns}" \
 		count="${count}" bs="${bs}" status=none
 
-	nvme flush "/dev/${ns}"
+	nvme flush "/dev/${ns}" &> "${FULL}"
+	ret=$?
+	if [[ ${ret} -ne 0 ]]; then
+		echo "FAIL: nvme flush return error code: $(ret)"
+	fi
 
 	_nvme_disconnect_subsys
 

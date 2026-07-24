@@ -24,6 +24,7 @@ test() {
 
 	_setup_nvmet
 
+	local ret
 	local ns
 	local nblk_range="10,10,10,10,10,10,10,10,10,10"
 	local sblk_range="100,200,300,400,500,600,700,800,900,1000"
@@ -33,8 +34,14 @@ test() {
 	_nvme_connect_subsys
 
 	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+
 	nvme dsm "/dev/${ns}" --ad \
-		--slbs "${sblk_range}" --blocks "${nblk_range}"
+			--slbs "${sblk_range}" \
+			--blocks "${nblk_range}" &> "${FULL}"
+	ret=$?
+	if [[ ${ret} -ne 0 ]]; then
+		echo "FAIL: nvme dsm return error code: $(ret)"
+	fi
 
 	_nvme_disconnect_subsys
 

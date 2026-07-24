@@ -52,7 +52,7 @@ test() {
 	ns=$(_find_nvme_ns "${def_subsys_uuid}")
 	refcnt_orig=$(_module_use_count nvme_core)
 	echo 5 > "/sys/block/${ns}/delayed_removal_secs"
-	_nvme_disconnect_ctrl_sync "${nvmedev}" "${def_subsysnqn}"
+	_nvme_disconnect_ctrl "${nvmedev}"
 	ns=$(_find_nvme_ns "${def_subsys_uuid}")
 	if [[ "${ns}" = "" ]]; then
 		echo "could not find ns after disconnect"
@@ -85,7 +85,7 @@ test() {
 	ns=$(_find_nvme_ns "${def_subsys_uuid}")
 	refcnt_orig=$(_module_use_count nvme_core)
 	echo 5 > "/sys/block/${ns}/delayed_removal_secs"
-	_nvme_disconnect_ctrl_sync "${nvmedev}" "${def_subsysnqn}"
+	_nvme_disconnect_ctrl "${nvmedev}"
 	ns=$(_find_nvme_ns "${def_subsys_uuid}")
 	if [[ "${ns}" = "" ]]; then
 		echo "could not find ns after disconnect"

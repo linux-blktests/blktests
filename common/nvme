@@ -264,23 +264,52 @@ _setup_nvmet() {
 
 _nvme_disconnect_ctrl() {
 	local ctrl="$1"
+	local subsysnqn="$def_subsysnqn"
+	local no_wait=false
 
-	nvme disconnect --device "${ctrl}"
-}
+	shift
 
-_nvme_disconnect_ctrl_sync() {
-	local ctrl="$1"
-	local subsysnqn="$2"
-
-	_nvme_disconnect_ctrl "${ctrl}"
-
-	for ((i = 0; i < 10; i++)); do
-		_nvme_ctrl_ready "${ctrl}" "${subsysnqn}"
-		if [[ $? -eq 1 ]]; then
-			break
-		fi
-		sleep .1
+	while [[ $# -gt 0 ]]; do
+		case $1 in
+			--subsysnqn)
+				subsysnqn="$2"
+				shift 2
+				;;
+			--no-wait)
+				no_wait=true
+				shift 1
+				;;
+			*)
+				echo "WARNING: unknown argument: $1"
+				shift
+				;;
+		esac
 	done
+
+	local ctrl_dir="/sys/class/nvme/${ctrl}"
+	if [[ -d "${ctrl_dir}" ]]; then
+		local ret
+
+		nvme disconnect --device "${ctrl}" &> "${FULL}"
+		ret=$?
+		if [[ ${ret} -ne 0 ]]; then
+			echo "FAIL: nvme disconnect returned error code: ${ret}"
+		fi
+
+		if [[ ${no_wait} = false ]]; then
+			for ((i = 0; i < 10; i++)); do
+				_nvme_ctrl_ready "${ctrl}" "${subsysnqn}"
+				if [[ $? -eq 1 ]]; then
+					break
+				fi
+				sleep .1
+			done
+		else
+			if [[ -d "${ctrl_dir}" ]]; then
+				echo "FAIL: Controller ${ctrl} still exists after disconnect"
+			fi
+		fi
+	fi
 }
 
 _nvme_wait_subsys_removed() {
@@ -291,13 +320,19 @@ _nvme_wait_subsys_removed() {
 		if [ "$subsysnqn" == "$_subsysnqn" ]; then
 			for ((i = 0; i < 10; i++)); do
 				if [ ! -d "$subsyspath" ]; then
-					break
+					return 0
 				fi
 				sleep .1
 			done
-			break
+
+			if [ -d "$subsyspath" ]; then
+				return 1
+			fi
+			return 0
 		fi
 	done
+
+	return 0
 }
 
 _nvme_find_subsys_nvme_generic() {
@@ -524,6 +559,7 @@ _nvme_connect_subsys() {
 
 _nvme_disconnect_subsys() {
 	local subsysnqn="$def_subsysnqn"
+	local ret
 
 	while [[ $# -gt 0 ]]; do
 		case $1 in
@@ -538,8 +574,15 @@ _nvme_disconnect_subsys() {
 		esac
 	done
 
-	nvme disconnect --nqn "${subsysnqn}" |& tee -a "$FULL" |
-		grep -o "disconnected.*"
+	nvme disconnect --nqn "${subsysnqn}" &> "${FULL}"
+	ret=$?
+	if [[ ${ret} -ne 0 ]]; then
+		echo "FAIL: nvme disconnect returned error code: ${ret}"
+	fi
+
+	if ! _nvme_wait_subsys_removed "${subsysnqn}"; then
+		echo "FAIL: subsystem sysfs entry still exits"
+	fi
 }
 
 _nvme_ctrl_ready() {

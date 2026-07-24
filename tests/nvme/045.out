@@ -8,5 +8,4 @@ Change DH group to ffdhe8192
 Re-authenticate with changed DH group
 Change hash to hmac(sha512)
 Re-authenticate with changed hash
-disconnected 1 controller(s)
 Test complete

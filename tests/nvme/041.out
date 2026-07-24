@@ -1,6 +1,4 @@
 Running nvme/041
 Test unauthenticated connection (should fail)
-disconnected 0 controller(s)
 Test authenticated connection
-disconnected 1 controller(s)
 Test complete

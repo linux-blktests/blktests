@@ -17,5 +17,4 @@ state: live
 iteration 5
 state: connecting
 state: live
-disconnected 1 controller(s)
 Test complete

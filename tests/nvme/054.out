@@ -3,7 +3,6 @@ Register
 gen       : 0
 rtype     : 0
 regctl    : 0
-NVME Reservation  success
 gen       : 1
 rtype     : 0
 regctl    : 1
@@ -12,7 +11,6 @@ regctlext[0] :
   rcsts      : 0
   rkey       : 4
 Replace
-NVME Reservation  success
 gen       : 2
 rtype     : 0
 regctl    : 1
@@ -21,13 +19,10 @@ regctlext[0] :
   rcsts      : 0
   rkey       : 5
 Unregister
-NVME Reservation  success
 gen       : 3
 rtype     : 0
 regctl    : 0
 Acquire
-NVME Reservation  success
-NVME Reservation Acquire success
 gen       : 4
 rtype     : 1
 regctl    : 1
@@ -36,7 +31,6 @@ regctlext[0] :
   rcsts      : 1
   rkey       : 4
 Preempt
-NVME Reservation Acquire success
 gen       : 5
 rtype     : 2
 regctl    : 1
@@ -45,7 +39,6 @@ regctlext[0] :
   rcsts      : 1
   rkey       : 4
 Release
-NVME Reservation Release success
 gen       : 5
 rtype     : 0
 regctl    : 1
@@ -54,7 +47,6 @@ regctlext[0] :
   rcsts      : 0
   rkey       : 4
 Clear
-NVME Reservation Acquire success
 gen       : 5
 rtype     : 1
 regctl    : 1
@@ -62,6 +54,4 @@ regctlext[0] :
   cntlid     : ffff
   rcsts      : 1
   rkey       : 4
-NVME Reservation Release success
-disconnected 1 controller(s)
 Test complete
