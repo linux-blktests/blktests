@@ -1,0 +1,53 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Tal Zussman
+#
+# Write to a block device through a shared mmap, msync() and fsync() it, and
+# check that the data reached the disk. Uses a block size below the folio size,
+# where writeback tracks dirty state per block rather than per folio, so
+# dirtying through a mapping has to keep the per-block state in sync. With a
+# single block per folio there is nothing to get out of sync and the write is
+# never lost.
+#
+# Regression test for patch "block: use iomap_dirty_folio for block devices".
+
+. tests/block/rc
+. common/null_blk
+
+DESCRIPTION="check that mmap writes to a block device with a small block size are not lost"
+QUICK=1
+
+requires() {
+	_have_null_blk
+	_have_src_program mmap-loss
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	local ret
+
+	if ! _configure_null_blk nullb1 blocksize=512 memory_backed=1 \
+	     size=64 power=1; then
+		echo "configuring null_blk failed"
+		return 1
+	fi
+
+	src/mmap-loss /dev/nullb1 512 >>"${FULL}" 2>&1
+	ret=$?
+
+	_exit_null_blk
+
+	case $ret in
+	0)
+		;;
+	2)
+		echo "mmap write to the block device was lost"
+		;;
+	*)
+		echo "mmap-loss helper failed"
+		;;
+	esac
+
+	echo "Test complete"
+}

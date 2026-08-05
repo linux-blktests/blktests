@@ -19,6 +19,7 @@ C_TARGETS := \
 	loblksize \
 	loop_change_fd \
 	loop_get_status_null \
+	mmap-loss \
 	mount_clear_sock \
 	nvme-delay-ioctl \
 	nvme-passthrough-meta \
