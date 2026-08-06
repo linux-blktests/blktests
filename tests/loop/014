@@ -1,0 +1,76 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Daan De Meyer
+#
+# Verify that partitions added manually with BLKPG do not survive a
+# LOOP_CHANGE_FD on a loop device without LO_FLAGS_PARTSCAN.
+#
+# Regression test for commit "loop: drop stale partitions on LOOP_CHANGE_FD".
+
+. tests/loop/rc
+
+DESCRIPTION="remove manually added partitions when the backing file is changed"
+QUICK=1
+
+loop_device=
+udevd_stopped=
+
+requires() {
+	_have_src_program loop_change_fd
+	_have_program sfdisk
+	_have_program partx
+}
+
+cleanup() {
+	if [[ -n "$loop_device" ]]; then
+		losetup --detach "$loop_device" &>/dev/null
+	fi
+	if [[ -n "$udevd_stopped" ]]; then
+		_systemd_start_udevd
+	fi
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+	_register_test_cleanup cleanup
+
+	# LOOP_CHANGE_FD requires both backing files to have the same size. The
+	# new one is left without a partition table so that nothing can recreate
+	# the partition of the old one.
+	truncate --size=3MiB "$TMPDIR/old"
+	truncate --size=3MiB "$TMPDIR/new"
+	sfdisk "$TMPDIR/old" >"$FULL" 2>&1 <<-EOF
+		label: gpt
+		size=1MiB
+	EOF
+
+	# Keep userspace from removing the partition on our behalf.
+	if _systemctl_unit_is_active systemd-udevd; then
+		_systemd_stop_udevd
+		udevd_stopped=1
+	fi
+
+	# LOOP_CHANGE_FD only works on read-only loop devices.
+	if ! loop_device="$(losetup --read-only --find --show "$TMPDIR/old")"; then
+		echo "Failed to configure loop device"
+		echo "Test complete"
+		return
+	fi
+	local name="${loop_device##*/}"
+	local partition="/sys/block/$name/${name}p1"
+
+	# Add a partition without setting LO_FLAGS_PARTSCAN on the loop device.
+	if ! partx --add "$loop_device" >>"$FULL" 2>&1; then
+		echo "Failed to add partition"
+	elif [[ ! -e "$partition" ]]; then
+		echo "Partition was not created"
+	fi
+
+	if ! src/loop_change_fd "$loop_device" "$TMPDIR/new" >>"$FULL" 2>&1; then
+		echo "Failed to change the backing file"
+	elif [[ -e "$partition" ]]; then
+		echo "Partition still exists after the backing file was changed"
+	fi
+
+	echo "Test complete"
+}
