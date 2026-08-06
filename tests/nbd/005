@@ -1,0 +1,88 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Daan De Meyer
+#
+# Verify that the partitions of an nbd device do not survive NBD_CLEAR_SOCK.
+#
+# With a non-zero max_part, nbd_open() sets GD_NEED_PART_SCAN itself on a
+# disconnected device, which hides a missing teardown in the disconnect path.
+# Load nbd with max_part=0 to run this test.
+#
+# Regression test for commit "nbd: drop stale partitions on NBD_CLEAR_SOCK".
+
+. tests/nbd/rc
+
+DESCRIPTION="remove partitions of a disconnected nbd device"
+QUICK=1
+
+server_started=
+nbd_connected=
+udevd_stopped=
+
+requires() {
+	_have_nbd
+	_have_module_param_value nbd max_part 0
+	_have_program parted
+}
+
+cleanup() {
+	if [[ -n "$nbd_connected" ]]; then
+		nbd-client -nonetlink -d /dev/nbd0 &>/dev/null
+	fi
+	if [[ -n "$server_started" ]]; then
+		_stop_nbd_server
+	fi
+	if [[ -n "$udevd_stopped" ]]; then
+		_systemd_start_udevd
+	fi
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+	_register_test_cleanup cleanup
+
+	_start_nbd_server
+	server_started=1
+
+	if ! nbd-client -nonetlink -N export localhost /dev/nbd0 >>"$FULL" 2>&1 ||
+			! _wait_for_nbd_connect; then
+		echo "Failed to connect nbd device"
+		echo "Test complete"
+		return
+	fi
+	nbd_connected=1
+
+	{
+	parted -s /dev/nbd0 mklabel gpt
+	parted -s /dev/nbd0 mkpart primary 1MiB 100MiB
+	} >>"$FULL" 2>&1
+	udevadm settle
+
+	if [[ ! -e /sys/block/nbd0/nbd0p1 ]]; then
+		echo "Partition was not created"
+		echo "Test complete"
+		return
+	fi
+
+	# Keep userspace from removing the partition on our behalf.
+	if _systemctl_unit_is_active systemd-udevd; then
+		_systemd_stop_udevd
+		udevd_stopped=1
+	fi
+
+	if ! nbd-client -nonetlink -d /dev/nbd0 >>"$FULL" 2>&1 ||
+			! _wait_for_nbd_disconnect; then
+		echo "Failed to disconnect nbd device"
+		echo "Test complete"
+		return
+	fi
+	nbd_connected=
+
+	# The partition is dropped when the disconnected device is reopened.
+	blockdev --getsize64 /dev/nbd0 >>"$FULL" 2>&1
+	if [[ -e /sys/block/nbd0/nbd0p1 ]]; then
+		echo "Partition still exists after disconnect"
+	fi
+
+	echo "Test complete"
+}
