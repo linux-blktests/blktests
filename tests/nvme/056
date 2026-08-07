@@ -38,15 +38,15 @@ requires() {
 
 have_netlink_cli() {
 	local cli
-	cli="${KERNELSRC}/tools/net/ynl/cli.py"
+	cli="${KERNELSRC}/tools/net/ynl/pyynl/cli.py"
 
 	if ! [ -f "$cli" ]; then
-		SKIP_REASONS+=("Kernel sources do not have tools/net/ynl/cli.py")
+		SKIP_REASONS+=("Kernel sources do not have tools/net/ynl/pyynl/cli.py")
 		return 1
 	fi
 
 	if ! "$cli" -h &> /dev/null; then
-		SKIP_REASONS+=("Cannot run the kernel tools/net/ynl/cli.py")
+		SKIP_REASONS+=("Cannot run the kernel tools/net/ynl/pyynl/cli.py")
 		return 1;
 	fi
 
@@ -69,7 +69,7 @@ set_conditions() {
 }
 
 netlink_cli() {
-	"${KERNELSRC}/tools/net/ynl/cli.py" \
+	"${KERNELSRC}/tools/net/ynl/pyynl/cli.py" \
 		--spec "${KERNELSRC}/Documentation/netlink/specs/ulp_ddp.yaml" \
 		"$@"
 }
