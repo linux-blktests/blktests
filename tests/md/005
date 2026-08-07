@@ -1,0 +1,53 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Sebastian Chlad, SUSE
+#
+# Basic sanity test: create a RAID 0 (striped) array on top of two brd
+# (ram disk) devices, verify it comes up active, write to it with fio,
+# then tear it down.
+
+. tests/md/rc
+. common/brd
+
+DESCRIPTION="create a RAID 0 array and verify it is active"
+QUICK=1
+
+requires() {
+	_have_driver raid0
+	_have_brd
+	_have_fio
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	local mddev="/dev/md/blktests_md_${TEST_NAME##*/}"
+
+	if ! _init_brd rd_size=524288 rd_nr=2; then
+		echo "failed to init brd devices"
+		return 1
+	fi
+
+	mdadm --create --run --quiet "$mddev" \
+		--level=0 --raid-devices=2 \
+		/dev/ram0 /dev/ram1
+
+	udevadm settle
+
+	if ! _md_is_level "$mddev" raid0; then
+		echo "array is not raid0"
+		_md_detail "$mddev"
+	fi
+
+	if ! _md_is_healthy "$mddev"; then
+		echo "array did not reach a healthy state"
+		_md_detail "$mddev"
+	fi
+
+	_run_fio_verify_io --filename="$mddev" --size=64M
+
+	mdadm --quiet --stop "$mddev" >/dev/null 2>&1
+	_cleanup_brd
+
+	echo "Test complete"
+}
