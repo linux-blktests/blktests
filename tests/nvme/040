@@ -37,9 +37,11 @@ test() {
 
 	# start fio job
 	echo "starting background fio"
+	set -m
 	_run_fio_rand_io --filename="/dev/${ns}" \
 		--group_reporting --ramp_time=5 \
 		--time_based --runtime=1d &> /dev/null &
+	set +m
 	fio_pid=$!
 	sleep 5
 
@@ -50,7 +52,7 @@ test() {
 	echo "deleting controller"
 	_nvme_delete_ctrl "${nvmedev}"
 
-	{ kill "${fio_pid}"; wait; } &> /dev/null
+	{ kill -- -"${fio_pid}"; wait; } &> /dev/null
 
 	_nvmet_target_cleanup
 

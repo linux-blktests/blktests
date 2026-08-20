@@ -34,9 +34,11 @@ test() {
 
 	ns=$(_find_nvme_ns "${def_subsys_uuid}")
 
+	set -m
 	_run_fio_rand_io --filename="/dev/${ns}" \
 		--group_reporting \
 		--time_based --runtime=1d &> /dev/null &
+	set +m
 	fio_pid=$!
 	sleep 1
 
@@ -56,7 +58,7 @@ test() {
 		echo "state: $(cat "${state_file}")"
 	done
 
-	{ kill "${fio_pid}"; wait; } &> /dev/null
+	{ kill -- -"${fio_pid}"; wait; } &> /dev/null
 
 	_nvme_disconnect_subsys
 

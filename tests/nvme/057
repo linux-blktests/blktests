@@ -70,9 +70,11 @@ test() {
 
 	# start fio job
 	ns=$(_find_nvme_ns "$def_subsys_uuid")
+	set -m
 	_run_fio_verify_io --filename="/dev/${ns}" \
 			   --group_reporting --ramp_time=5 \
 			   --time_based --runtime=1m &> "$FULL" &
+	set +m
 	fio_pid=$!
 	sleep 5
 
@@ -88,7 +90,7 @@ test() {
 
 	sleep 10
 
-	{ kill "${fio_pid}"; wait; } &> /dev/null
+	{ kill -- -"${fio_pid}"; wait; } &> /dev/null
 
 	_nvme_disconnect_subsys
 	_nvmet_target_cleanup
