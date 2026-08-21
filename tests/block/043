@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-License-Identifier: GPL-2.0
+# SPDX-License-Identifier: GPL-3.0+
 # Copyright 2025 Keith Busch <kbusch@kernel.org>
 #
 # Tests various user space metadata offsets with io_uring capabilities. If the
