@@ -32,7 +32,7 @@ test() {
 	local hostkey
 	local ctrl
 
-	hostkey=$(_nvme_gen_tls_key -n "${def_hostnqn}" -c "${def_subsysnqn}" -m 1 -I 1 -i 2> /dev/null)
+	hostkey=$(_nvme_run "keys gen-tls-psk" -n "${def_hostnqn}" -c "${def_subsysnqn}" -m 1 -I 1 -i 2> /dev/null)
 	if [ -z "$hostkey" ] ; then
 		echo "TLS key generation failed"
 		return 1

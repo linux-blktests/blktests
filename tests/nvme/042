@@ -36,7 +36,7 @@ test() {
 
 	for hmac in 0 1 2 3; do
 		echo "Testing hmac ${hmac}"
-		hostkey="$(_nvme_gen_kxchap_key --hmac=${hmac} --nqn "${def_subsysnqn}" 2> /dev/null)"
+		hostkey="$(_nvme_gen_kxchap_secret --hmac=${hmac} 2> /dev/null)"
 		if [ -z "$hostkey" ] ; then
 			echo "couldn't generate host key for hmac ${hmac}"
 			return 1
@@ -50,7 +50,7 @@ test() {
 
 	for key_len in 32 48 64; do
 		echo "Testing key length ${key_len}"
-		hostkey="$(_nvme_gen_kxchap_key --key-length=${key_len} --nqn "${def_subsysnqn}" 2> /dev/null)"
+		hostkey="$(_nvme_gen_kxchap_secret --key-length=${key_len} 2> /dev/null)"
 		if [ -z "$hostkey" ] ; then
 			echo "couldn't generate host key for length ${key_len}"
 			return 1

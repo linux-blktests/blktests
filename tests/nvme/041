@@ -30,7 +30,7 @@ test() {
 	local hostkey
 	local ctrldev
 
-	hostkey="$(_nvme_gen_kxchap_key --nqn "${def_subsysnqn}" 2> /dev/null)"
+	hostkey="$(_nvme_gen_kxchap_secret 2> /dev/null)"
 	if [ -z "$hostkey" ] ; then
 		echo "key generation failed"
 		return 1

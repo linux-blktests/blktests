@@ -65,14 +65,14 @@ test_device() {
 
 	test_desc="TEST 2 - Verify sysfs atomic_write_unit_max_bytes is consistent "
 	test_desc+="with NVMe AWUPF/NAWUPF"
-	nvme_nsfeat=$(nvme id-ns /dev/"${ns_dev}" | grep nsfeat | awk '{ print $3}')
+	nvme_nsfeat=$(_nvme_run "id ns" /dev/"${ns_dev}" | grep nsfeat | awk '{ print $3}')
 	nvme_nsabp=$((("$nvme_nsfeat" & 0x2) != 0))
 	if [ "$nvme_nsabp" = 1 ] # Check if NSABP is set
 	then
-		nvme_awupf=$(nvme id-ns /dev/"$ns_dev" | grep nawupf | awk '{ print $3}')
+		nvme_awupf=$(_nvme_run "id ns" /dev/"$ns_dev" | grep nawupf | awk '{ print $3}')
 		atomic_max_bytes=$(( ("$nvme_awupf" + 1) * "$sysfs_logical_block_size" ))
 	else
-		nvme_awupf=$(nvme id-ctrl /dev/"${ctrl_dev}" | grep awupf | awk '{ print $3}')
+		nvme_awupf=$(_nvme_run "id ctrl" /dev/"${ctrl_dev}" | grep awupf | awk '{ print $3}')
 		atomic_max_bytes=$(( ("$nvme_awupf" + 1) * "$sysfs_logical_block_size" ))
 	fi
 	if [ "$atomic_max_bytes" -le "$max_hw_bytes" ]

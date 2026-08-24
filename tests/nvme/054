@@ -23,7 +23,7 @@ resv_report() {
 	local test_dev=$1
 	local report_arg=$2
 
-	nvme resv-report "${test_dev}" "${report_arg}" | grep -v "hostid" | \
+	_nvme_run "resv report" "${test_dev}" "${report_arg}" | grep -v "hostid" | \
 		grep -E "gen|rtype|regctl|regctlext|cntlid|rcsts|rkey"
 }
 
@@ -31,7 +31,7 @@ nvme_resv() {
 	local cmd=$1
 	local test_dev=$2
 	shift 2
-	if ! nvme resv-"${cmd}" "$test_dev" "$@" >>"${FULL}" 2>&1; then
+	if ! _nvme_run "resv ${cmd}" "$test_dev" "$@" >>"${FULL}" 2>&1; then
 		echo "FAIL: nvme resv-${cmd} failed on $test_dev with args: $*"
 		return 1
 	fi
@@ -42,7 +42,7 @@ test_resv() {
 	local report_arg="--cdw11=1"
 	local test_dev="/dev/${ns}"
 
-	if nvme resv-report --help 2>&1 | grep -- '--eds' > /dev/null; then
+	if _nvme_run "resv report" --help 2>&1 | grep -- '--eds' > /dev/null; then
 		report_arg="--eds"
 	fi
 
