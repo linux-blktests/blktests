@@ -1,57 +1,9 @@
 Running nvme/054
 Register
-gen       : 0
-rtype     : 0
-regctl    : 0
-gen       : 1
-rtype     : 0
-regctl    : 1
-regctlext[0] :
-  cntlid     : ffff
-  rcsts      : 0
-  rkey       : 4
 Replace
-gen       : 2
-rtype     : 0
-regctl    : 1
-regctlext[0] :
-  cntlid     : ffff
-  rcsts      : 0
-  rkey       : 5
 Unregister
-gen       : 3
-rtype     : 0
-regctl    : 0
 Acquire
-gen       : 4
-rtype     : 1
-regctl    : 1
-regctlext[0] :
-  cntlid     : ffff
-  rcsts      : 1
-  rkey       : 4
 Preempt
-gen       : 5
-rtype     : 2
-regctl    : 1
-regctlext[0] :
-  cntlid     : ffff
-  rcsts      : 1
-  rkey       : 4
 Release
-gen       : 5
-rtype     : 0
-regctl    : 1
-regctlext[0] :
-  cntlid     : ffff
-  rcsts      : 0
-  rkey       : 4
 Clear
-gen       : 5
-rtype     : 1
-regctl    : 1
-regctlext[0] :
-  cntlid     : ffff
-  rcsts      : 1
-  rkey       : 4
 Test complete
