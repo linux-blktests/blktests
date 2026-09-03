@@ -1,0 +1,117 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Sebastian Chlad, SUSE
+#
+# Reproduces a raid1 write-vs-recovery race: a NULL pointer dereference
+# in wait_for_serialization()/raid1_write_request() when a write races
+# a fail -> remove -> add -> recovery transition while a filesystem
+# writer is still active.
+
+. tests/md/rc
+
+DESCRIPTION="reproduce raid1 write-vs-recovery race with concurrent I/O on ext4"
+
+requires() {
+	_have_driver raid1
+	_have_fs ext4
+	_have_program mkfs.ext4
+}
+
+device_requires() {
+	_require_test_dev_size 1g
+}
+
+test_device_array() {
+	echo "Running ${TEST_NAME}"
+
+	if [[ ${#TEST_DEV_ARRAY[@]} -lt 2 ]]; then
+		SKIP_REASONS+=("requires at least 2 test devices")
+		return 1
+	fi
+
+	local mddev="/dev/md/blktests_md_${TEST_NAME##*/}"
+	local mnt="$TMPDIR/mnt"
+	local devs=("${TEST_DEV_ARRAY[0]}" "${TEST_DEV_ARRAY[1]}")
+	local fail_dev="${TEST_DEV_ARRAY[1]}"
+	local writer_pid=""
+	local count
+
+	mkdir -p "$mnt"
+
+	mdadm --create --run --force --quiet "$mddev" \
+		--level=1 --raid-devices="${#devs[@]}" --bitmap=internal \
+		"${devs[@]}"
+	udevadm settle
+
+	if ! _md_is_level "$mddev" raid1; then
+		echo "array is not raid1"
+		_md_detail "$mddev"
+	fi
+
+	# Bounded so a stalled initial resync fails the test instead of
+	# hanging it; we want to race the recovery below, not this one.
+	if ! timeout 300 mdadm --wait "$mddev"; then
+		echo "timed out waiting for initial resync to finish"
+	fi
+
+	if ! _md_is_healthy "$mddev"; then
+		echo "array did not reach a healthy state after initial resync"
+		_md_detail "$mddev"
+	fi
+
+	# ext4's lazy inode-table zeroing runs in the background after
+	# mount - this is the writer that originally crashed.
+	mkfs.ext4 -q -F "$mddev"
+	mount "$mddev" "$mnt"
+
+	# Extra writer to keep I/O in flight regardless of ext4lazyinit timing.
+	(
+		while :; do
+			dd if=/dev/urandom of="$mnt/writer.dat" bs=1M count=8 \
+				oflag=direct status=none 2>/dev/null
+		done
+	) &
+	writer_pid=$!
+
+	# --quiet doesn't suppress --fail/--remove/--add output, unlike
+	# --create/--stop, so redirect explicitly.
+	mdadm --quiet "$mddev" --fail "$fail_dev" >/dev/null 2>&1
+
+	# --remove hasn't run yet, so wait for "faulty", not "removed".
+	count=0
+	until _md_is_faulty "$mddev"; do
+		sleep 1
+		count=$((count + 1))
+		if ((count >= 20)); then
+			echo "timed out waiting for device to be marked faulty"
+			break
+		fi
+	done
+
+	mdadm --quiet "$mddev" --remove "$fail_dev" >/dev/null 2>&1
+	mdadm --quiet "$mddev" --add "$fail_dev" >/dev/null 2>&1
+
+	# Confirm recovery actually started before racing the writer against it.
+	count=0
+	until grep -q "recovery" /proc/mdstat; do
+		sleep 1
+		count=$((count + 1))
+		if ((count >= 10)); then
+			echo "timed out waiting for recovery to start"
+			break
+		fi
+	done
+
+	# Original crash landed within ~2s of --fail, ~24ms of recovery start.
+	sleep 5
+
+	if [[ -n "$writer_pid" ]]; then
+		kill "$writer_pid" 2>/dev/null
+		wait "$writer_pid" 2>/dev/null
+	fi
+
+	umount "$mnt" 2>/dev/null
+	mdadm --quiet --stop "$mddev" >/dev/null 2>&1
+
+	echo "Test complete"
+}
