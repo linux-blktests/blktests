@@ -449,9 +449,11 @@ _call_test() {
 	declare -A LAST_TEST_RUN
 	_read_last_test_run
 	_output_last_test_run
+	local test_start
+	test_start="$(date "+%F %T.%N")"
 
 	declare -A TEST_RUN
-	TEST_RUN["date"]="$(date "+%F %T")"
+	TEST_RUN["date"]="${test_start%.*}"
 	TEST_RUN["description"]="${DESCRIPTION}"
 
 	mkdir -p "$(dirname "$seqres")"
@@ -464,7 +466,7 @@ _call_test() {
 		_setup_kmemleak
 
 		if [[ -w /dev/kmsg ]]; then
-			local dmesg_marker="run blktests $TEST_NAME at ${TEST_RUN["date"]}"
+			local dmesg_marker="run blktests $TEST_NAME at $test_start"
 			echo "$dmesg_marker" >> /dev/kmsg
 		else
 			local dmesg_marker=""
