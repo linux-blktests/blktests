@@ -16,6 +16,7 @@ def_local_wwnn="0x10001100aa000001"
 def_local_wwpn="0x20001100aa000001"
 def_hostid="0f01fb42-9f7f-4856-b0b3-51e60b8de349"
 def_hostnqn="nqn.2014-08.org.nvmexpress:uuid:${def_hostid}"
+export def_check_timeout=10
 export def_subsysnqn="blktests-subsystem-1"
 export def_subsys_uuid="91fdba0d-f87b-4c25-b80f-db7be1418b9e"
 export def_nsid="1"
@@ -153,6 +154,16 @@ _nvme_fcloop_add_tport() {
 	echo "wwnn=${wwnn},wwpn=${wwpn}" > ${loopctl}/add_target_port
 }
 
+_nvme_fcloop_set_rport_marginal() {
+	local wwnn="$1"
+	local wwpn="$2"
+	local marginal="$3"
+	local loopctl=/sys/class/fcloop/ctl
+
+	echo "wwnn=${wwnn},wwpn=${wwpn},marginal=${marginal}" \
+	     > ${loopctl}/set_marginal_rport
+}
+
 _nvme_fcloop_del_rport() {
 	local local_wwnn="$1"
 	local local_wwpn="$2"
@@ -197,6 +208,252 @@ _cleanup_blkdev() {
 		losetup -d "${dev}"
 	done
 	rm -f "$(_nvme_def_file_path)"
+}
+
+_subsys_rport_addr() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	cat "$RPORT"/address
+	# traddr=nn-0x2047d039ea98949e:pn-0x2048d039ea98949e,host_traddr=nn-0x200000109b9b7e4e:pn-0x100000109b9b7e4e
+}
+
+_subsys_get_port() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local port
+	local address
+
+	address=$(_subsys_rport_addr "$RPORT")
+	port=$(echo "$address" | sed -n 's/.*pn-\(.*\),.*/\1/p')
+	echo $(( port - $(_remote_wwpn 0) ))
+	# a number representing the port number, e.g. 0, 1, 2, 3
+}
+
+_rport_set_iopolicy() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local POLICY=$2 # numa queue-depth round-robin
+
+	echo "$POLICY" | sudo tee "$RPORT"/iopolicy > /dev/null
+	# Returns none
+}
+
+_rport_set_marginal() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	_setup_nvmet_port_marginal "$(_subsys_get_port "$RPORT")" "marginal"
+}
+
+_rport_set_online() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	_setup_nvmet_port_marginal "$(_subsys_get_port "$RPORT")" "live"
+}
+
+_rport_is_online_raw() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	[[ "$(cat "$RPORT"/state)" == "live" ]]
+	# Returns Success or Fail
+}
+
+_rport_is_marginal_raw() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	[[ "$(cat "$RPORT"/state)" == "marginal" ]]
+	# Returns Success or Fail
+}
+
+_rport_in_use_raw() {
+	local SUBSYS_PATH=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	# there should only be one "nvme3c9n1"
+	[[ "$(cat "$SUBSYS_PATH"/nvme*/stat | awk '{print $9}')" != "0" ]]
+	# Returns exit code 0 if in use, 1 if not in use
+}
+
+_rport_is_optimized() {
+	local SUBSYS_PATH=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	# there should only be one "nvme3c9n1"
+	[[ "$(cat "$SUBSYS_PATH"/nvme*/ana_state)" == "optimized" ]]
+	# Returns exit code 0 if optimized, 1 if not optimized
+}
+
+_rport_is_non_optimized() {
+	local SUBSYS_PATH=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	# there should only be one "nvme3c9n1"
+	[[ "$(cat "$SUBSYS_PATH"/nvme*/ana_state)" == "non-optimized" ]]
+	# Returns exit code 0 if non-optimized, 1 if not non-optimized
+}
+
+_rport_is_inaccessible() {
+	local SUBSYS_PATH=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+
+	# there should only be one "nvme3c9n1"
+	[[ "$(cat "$SUBSYS_PATH"/nvme*/ana_state)" == "inaccessible" ]]
+	# Returns exit code 0 if inaccessible, 1 if not inaccessible
+}
+
+_rport_is_online() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local -i TIMEOUT="${2:-$def_check_timeout}"
+	local -i time_passed=0
+
+	for (( time_passed=0; time_passed < TIMEOUT; time_passed++ )); do
+		_rport_is_online_raw "$RPORT" && return 0 || true
+		sleep 1
+	done
+	return 1
+	# Returns Success or Fail
+}
+
+_rport_is_marginal() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local -i TIMEOUT="${2:-$def_check_timeout}"
+	local -i time_passed=0
+
+	for (( time_passed=0; time_passed < TIMEOUT; time_passed++ )); do
+		_rport_is_marginal_raw "$RPORT" && return 0 || true
+		sleep 1
+	done
+	return 1
+	# Returns Success or Fail
+}
+
+_rport_in_use() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local -i TIMEOUT="${2:-$def_check_timeout}"
+	local -i time_passed=0
+
+	for (( time_passed=0; time_passed < TIMEOUT; time_passed++ )); do
+		_rport_in_use_raw "$RPORT" && return 0 || true
+		sleep 1
+	done
+	return 1
+	# Returns exit code 0 if in use, 1 if not in use
+}
+
+_rport_not_in_use() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local -i TIMEOUT="${2:-$def_check_timeout}"
+	local -i time_passed=0
+
+	for (( time_passed=0; time_passed < TIMEOUT; time_passed++ )); do
+		_rport_in_use_raw "$RPORT" || return 0
+		sleep 1
+	done
+	return 1
+	# Returns exit code 0 if in not use, 1 if in use
+}
+
+_rport_num_in_use() {
+	local -a RPORTS_PATHS=("$@") # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local -i num_in_use=0
+
+	# Check if one of the marginal paths is in use
+	for subsys_path in "${RPORTS_PATHS[@]}"; do
+		_rport_in_use_raw "$subsys_path" || continue
+		num_in_use=$((num_in_use + 1))
+	done
+
+	echo "$num_in_use"
+	# Returns number of links in use
+}
+
+# check if link is marginal or not
+_rport_check_online() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local STATE=$2 # "Online"
+	local -i TIMEOUT="${3:-$def_check_timeout}"
+
+	if [[ "$STATE" == "Online" ]]; then
+		if ! _rport_is_online "$RPORT" "$TIMEOUT"; then
+			echo  FC port \("$RPORT"\) is not online, expteced online.
+			return 1
+		fi
+	else
+		if ! _rport_is_marginal "$RPORT" "$TIMEOUT"; then
+			echo FC port \("$RPORT"\) is not marginal, expteced marginal.
+			return 1
+		fi
+	fi
+	# Returns Success or Fail
+}
+
+# check if link is in use
+_rport_check_use() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local STATE=$2 # "Online"
+	local -i TIMEOUT="${3:-$def_check_timeout}"
+
+	if [[ "$STATE" == "Online" ]]; then
+		if ! _rport_in_use "$RPORT" "$TIMEOUT"; then
+			echo FC port on \("$RPORT"\) is not being used, expected use.
+			return 1
+		fi
+	else
+		if ! _rport_not_in_use "$RPORT" "$TIMEOUT"; then
+			echo FC port on \("$RPORT"\) is being used, expected no use.
+			return 1
+		fi
+	fi
+	# Returns Success or Fail
+}
+
+# check if all links are in the expected use state based on ana state
+_rport_check_use_opt() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local -i TIMEOUT="${2:-$def_check_timeout}"
+
+	# Only optimized paths will be in use
+	if _rport_is_optimized "$RPORT"; then
+		_rport_check_use "$RPORT" Online "$TIMEOUT" || return 1
+	else
+		_rport_check_use "$RPORT" Marginal "$TIMEOUT" || return 1
+	fi
+	# Returns Success or Fail
+}
+
+# check if all links are in state and use state
+_rport_check() {
+	local RPORT=$1 # /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local STATE=$2 # "Online"
+	local -i TIMEOUT="${3:-$def_check_timeout}"
+
+	_rport_check_online "$RPORT" "$STATE" "$TIMEOUT" || return 1
+	_rport_check_use "$RPORT" "$STATE" "$TIMEOUT"
+	# Returns Success or Fail
+}
+
+# Check if one of the paths is in use
+_rport_check_one_use() {
+	local STATE=$1
+	local -i TIMEOUT=$2
+	shift
+	shift
+	local -a RPORTS_PATHS=("$@") #  /sys/devices/virtual/nvme-subsystem/nvme-subsys3/nvme9
+	local -i time_passed=0
+	local -i count_in_use=0
+
+	for (( time_passed=0; time_passed < TIMEOUT; time_passed++ )); do
+		# Check if one of the online paths is in use
+		count_in_use=$(_rport_num_in_use "${RPORTS_PATHS[@]}")
+		if [ $count_in_use -eq 1 ]; then
+			return 0
+		fi
+		sleep 1
+	done
+
+	if [ $count_in_use -gt 1 ]; then
+		echo More than one FC port is being used, expected only one in use when all are "$STATE" in numa mode.
+		return 1
+	fi
+
+	echo No FC ports are being used, expected atleast one in use when all are "$STATE" in numa mode.
+	# None of the online paths were in use
+	return 1
+
+	# Returns Success or Fail
 }
 
 _cleanup_nvmet() {
@@ -761,6 +1018,27 @@ _create_nvmet_port() {
 		fi
 	fi
 	echo "${port}"
+}
+
+_setup_nvmet_port_marginal() {
+	local -i port="$1"
+	local state="${2}"
+
+	if [[ "${nvme_trtype}" != "fc" ]]; then
+		echo "FAIL _setup_nvmet_port_marginal() only supports fc transport"
+		exit 1
+	fi
+
+	if [[ "${state}" == "live" ]]; then
+		_nvme_fcloop_set_rport_marginal "$(_remote_wwnn $port)" \
+					"$(_remote_wwpn $port)" 0
+	elif [[ "${state}" == "marginal" ]]; then
+		_nvme_fcloop_set_rport_marginal "$(_remote_wwnn $port)" \
+					"$(_remote_wwpn $port)" 1
+	else
+		echo "FAIL _setup_nvmet_port_marginal() invalid state: ${state}"
+		exit 1
+	fi
 }
 
 _setup_nvmet_port_ana() {
