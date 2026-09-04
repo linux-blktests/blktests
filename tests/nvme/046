@@ -36,15 +36,15 @@ test_device() {
 		echo "Error: io-passthru write passed (unexpected)"
 	fi
 
-	if ! _run_user "nvme id-ns ${ngdev}" >> "${FULL}" 2>&1; then
+	if ! _run_user "nvme $(_nvme_cmd "id ns") ${ngdev}" >> "${FULL}" 2>&1; then
 		echo "Error: id-ns failed"
 	fi
 
-	if ! _run_user "nvme id-ctrl ${ngdev}" >> "${FULL}" 2>&1; then
+	if ! _run_user "nvme $(_nvme_cmd "id ctrl") ${ngdev}" >> "${FULL}" 2>&1; then
 		echo "Error: id-ctrl failed"
 	fi
 
-	if _run_user "nvme ns-descs ${ngdev}" >> "${FULL}" 2>&1; then
+	if _run_user "nvme $(_nvme_cmd "id ns-descs") ${ngdev}" >> "${FULL}" 2>&1; then
 		echo "Error: ns-descs passed (unexpected)"
 	fi
 

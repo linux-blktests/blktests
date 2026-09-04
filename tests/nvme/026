@@ -32,7 +32,7 @@ test() {
 
 	ns=$(_find_nvme_ns "${def_subsys_uuid}")
 
-	if ! nvme ns-descs "/dev/${ns}" >> "$FULL" 2>&1; then
+	if ! _nvme_run "id ns-descs" "/dev/${ns}" >> "$FULL" 2>&1; then
 		echo "ERROR: ns-desc failed"
 	fi
 

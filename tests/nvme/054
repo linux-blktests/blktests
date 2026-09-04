@@ -23,15 +23,80 @@ resv_report() {
 	local test_dev=$1
 	local report_arg=$2
 
-	nvme resv-report "${test_dev}" "${report_arg}" | grep -v "hostid" | \
-		grep -E "gen|rtype|regctl|regctlext|cntlid|rcsts|rkey"
+	_nvme_run "resv report" "${test_dev}" "${report_arg}"
+}
+
+# Return the value of a scalar reservation status field out of a "nvme resv
+# report" text report. Accepts up to two names for the field: nvme-cli renamed
+# several of them after NVMe Base Specification 2.4 (ECN132), e.g. from
+# "regctl" to "regstrnt".
+resv_field() {
+	local report=$1
+	local field=$2
+	local alt_field=${3:-$2}
+
+	echo "${report}" | \
+		sed -n -E "s/^(${field}|${alt_field})[[:space:]]*:[[:space:]]*//p" | \
+		head -1
+}
+
+# Return the Nth (0-based) occurrence of an indented per-registrant
+# field (cntlid, rcsts, or rkey) out of a "nvme resv report" text
+# report.
+resv_registrant_field() {
+	local report=$1
+	local idx=$2
+	local field=$3
+
+	echo "${report}" | \
+		sed -n -E "s/^[[:space:]]+${field}[[:space:]]*:[[:space:]]*//p" | \
+		sed -n "$((idx + 1))p"
+}
+
+check_resv_status() {
+	local report=$1
+	local exp_gen=$2
+	local exp_rtype=$3
+	local exp_count=$4
+	local gen rtype count
+
+	gen=$(resv_field "${report}" gen)
+	rtype=$(resv_field "${report}" rtype)
+	count=$(resv_field "${report}" regctl regstrnt)
+
+	[[ "${gen}" == "${exp_gen}" ]] || \
+		echo "FAIL: expected gen ${exp_gen}, got '${gen}'"
+	[[ "${rtype}" == "${exp_rtype}" ]] || \
+		echo "FAIL: expected rtype ${exp_rtype}, got '${rtype}'"
+	[[ "${count}" == "${exp_count}" ]] || \
+		echo "FAIL: expected regctl/regstrnt ${exp_count}, got '${count}'"
+}
+
+check_resv_registrant() {
+	local report=$1
+	local idx=$2
+	local exp_cntlid=$3
+	local exp_rcsts=$4
+	local exp_rkey=$5
+	local cntlid rcsts rkey
+
+	cntlid=$(resv_registrant_field "${report}" "${idx}" cntlid)
+	rcsts=$(resv_registrant_field "${report}" "${idx}" rcsts)
+	rkey=$(resv_registrant_field "${report}" "${idx}" rkey)
+
+	[[ "${cntlid}" == "${exp_cntlid}" ]] || \
+		echo "FAIL: expected registrant[${idx}] cntlid ${exp_cntlid}, got '${cntlid}'"
+	[[ "${rcsts}" == "${exp_rcsts}" ]] || \
+		echo "FAIL: expected registrant[${idx}] rcsts ${exp_rcsts}, got '${rcsts}'"
+	[[ "${rkey}" == "${exp_rkey}" ]] || \
+		echo "FAIL: expected registrant[${idx}] rkey ${exp_rkey}, got '${rkey}'"
 }
 
 nvme_resv() {
 	local cmd=$1
 	local test_dev=$2
 	shift 2
-	if ! nvme resv-"${cmd}" "$test_dev" "$@" >>"${FULL}" 2>&1; then
+	if ! _nvme_run "resv ${cmd}" "$test_dev" "$@" >>"${FULL}" 2>&1; then
 		echo "FAIL: nvme resv-${cmd} failed on $test_dev with args: $*"
 		return 1
 	fi
@@ -41,40 +106,55 @@ test_resv() {
 	local ns=$1
 	local report_arg="--cdw11=1"
 	local test_dev="/dev/${ns}"
+	local report
 
-	if nvme resv-report --help 2>&1 | grep -- '--eds' > /dev/null; then
+	if _nvme_run "resv report" --help 2>&1 | grep -- '--eds' > /dev/null; then
 		report_arg="--eds"
 	fi
 
 	echo "Register"
-	resv_report "${test_dev}" "${report_arg}"
+	report=$(resv_report "${test_dev}" "${report_arg}")
+	check_resv_status "${report}" 0 0 0
 	nvme_resv register "${test_dev}" --nrkey=4 --rrega=0
-	resv_report "${test_dev}" "${report_arg}"
+	report=$(resv_report "${test_dev}" "${report_arg}")
+	check_resv_status "${report}" 1 0 1
+	check_resv_registrant "${report}" 0 ffff 0 4
 
 	echo "Replace"
 	nvme_resv register "${test_dev}" --crkey=4 --nrkey=5 --rrega=2
-	resv_report "${test_dev}" "${report_arg}"
+	report=$(resv_report "${test_dev}" "${report_arg}")
+	check_resv_status "${report}" 2 0 1
+	check_resv_registrant "${report}" 0 ffff 0 5
 
 	echo "Unregister"
 	nvme_resv register "${test_dev}" --crkey=5 --rrega=1
-	resv_report "${test_dev}" "${report_arg}"
+	report=$(resv_report "${test_dev}" "${report_arg}")
+	check_resv_status "${report}" 3 0 0
 
 	echo "Acquire"
 	nvme_resv register "${test_dev}" --nrkey=4 --rrega=0
 	nvme_resv acquire "${test_dev}" --crkey=4 --rtype=1 --racqa=0
-	resv_report "${test_dev}" "${report_arg}"
+	report=$(resv_report "${test_dev}" "${report_arg}")
+	check_resv_status "${report}" 4 1 1
+	check_resv_registrant "${report}" 0 ffff 1 4
 
 	echo "Preempt"
 	nvme_resv acquire "${test_dev}" --crkey=4 --prkey=4 --rtype=2 --racqa=1
-	resv_report "${test_dev}" "${report_arg}"
+	report=$(resv_report "${test_dev}" "${report_arg}")
+	check_resv_status "${report}" 5 2 1
+	check_resv_registrant "${report}" 0 ffff 1 4
 
 	echo "Release"
 	nvme_resv release "${test_dev}" --crkey=4 --rtype=2 --rrela=0
-	resv_report "${test_dev}" "${report_arg}"
+	report=$(resv_report "${test_dev}" "${report_arg}")
+	check_resv_status "${report}" 5 0 1
+	check_resv_registrant "${report}" 0 ffff 0 4
 
 	echo "Clear"
 	nvme_resv acquire "${test_dev}" --crkey=4 --rtype=1 --racqa=0
-	resv_report "${test_dev}" "${report_arg}"
+	report=$(resv_report "${test_dev}" "${report_arg}")
+	check_resv_status "${report}" 5 1 1
+	check_resv_registrant "${report}" 0 ffff 1 4
 	nvme_resv release "${test_dev}" --crkey=4 --rrela=1
 }
 

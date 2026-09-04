@@ -38,58 +38,160 @@ _nvme_def_file_path() {
 	echo "${TMPDIR}/img"
 }
 
-_nvme_kxchap_cmd_style() {
-	if [[ -z "${_nvme_kxchap_style:-}" ]]; then
-		if nvme keys gen-kxchap --nqn nvmf-test-subsys > /dev/null 2>&1; then
-			_nvme_kxchap_style="3"
-		elif nvme gen-dhchap-key --nqn nvmf-test-subsys > /dev/null 2>&1; then
-			_nvme_kxchap_style="2"
+_nvme_cli_detect_version() {
+	if [[ -z "${_nvme_cli_version:-}" ]]; then
+		local ver major
+
+		ver="$(nvme version 2> /dev/null | awk '/^nvme version/ {print $3}')"
+		major="${ver%%.*}"
+		if [[ "${major}" =~ ^[0-9]+$ ]] && ((major >= 3)); then
+			_nvme_cli_version="3"
 		else
-			_nvme_kxchap_style="none"
+			_nvme_cli_version="2"
 		fi
 	fi
 }
 
-_nvme_tls_cmd_style() {
-	if [[ -z "${_nvme_tls_style:-}" ]]; then
-		if nvme keys gen-tls --subsysnqn nvmf-test-subsys > /dev/null 2>&1; then
-			_nvme_tls_style="3"
-		elif nvme gen-tls-key --subsysnqn nvmf-test-subsys > /dev/null 2>&1; then
-			_nvme_tls_style="2"
-		else
-			_nvme_tls_style="none"
-		fi
+declare -Ag _NVME_CMD_MAP=(
+	["keys gen-kxchap-secret"]="gen-dhchap-key"
+	["keys check-kxchap-secret"]="check-dhchap-key"
+	["keys gen-tls-psk"]="gen-tls-key"
+	["keys check-tls-psk"]="check-tls-key"
+
+	# log plugin
+	["log supported-pages"]="supported-log-pages"
+	["log telemetry"]="telemetry-log"
+	["log fw"]="fw-log"
+	["log changed-ns-list"]="changed-ns-list-log"
+	["log smart"]="smart-log"
+	["log ana"]="ana-log"
+	["log error"]="error-log"
+	["log effects"]="effects-log"
+	["log endurance"]="endurance-log"
+	["log predictable-lat"]="predictable-lat-log"
+	["log pred-lat-event-agg"]="pred-lat-event-agg-log"
+	["log persistent-event"]="persistent-event-log"
+	["log endurance-event-agg"]="endurance-event-agg-log"
+	["log lba-status"]="lba-status-log"
+	["log resv-notif"]="resv-notif-log"
+	["log boot-part"]="boot-part-log"
+	["log phy-rx-eom"]="phy-rx-eom-log"
+	["log self-test"]="self-test-log"
+	["log fid-support-effects"]="fid-support-effects-log"
+	["log mi-cmd-support-effects"]="mi-cmd-support-effects-log"
+	["log media-unit-stat"]="media-unit-stat-log"
+	["log supported-cap-config"]="supported-cap-config-log"
+	["log mgmt-addr-list"]="mgmt-addr-list-log"
+	["log rotational-media-info"]="rotational-media-info-log"
+	["log changed-alloc-ns-list"]="changed-alloc-ns-list-log"
+	["log dispersed-ns-participating-nss"]="dispersed-ns-participating-nss-log"
+	["log reachability-groups"]="reachability-groups-log"
+	["log reachability-associations"]="reachability-associations-log"
+	["log host-discovery"]="host-discovery-log"
+	["log ave-discovery"]="ave-discovery-log"
+	["log pull-model-ddc-req"]="pull-model-ddc-req-log"
+	["log power-measurement"]="power-measurement-log"
+	["log sanitize"]="sanitize-log"
+
+	# id plugin
+	["id ctrl"]="id-ctrl"
+	["id ns"]="id-ns"
+	["id ns-granularity"]="id-ns-granularity"
+	["id ns-lba-format"]="id-ns-lba-format"
+	["id ns-list"]="list-ns"
+	["id ctrl-list"]="list-ctrl"
+	["id nvm-ctrl"]="nvm-id-ctrl"
+	["id nvm-ns"]="nvm-id-ns"
+	["id nvm-ns-lba-format"]="nvm-id-ns-lba-format"
+	["id primary-ctrl-caps"]="primary-ctrl-caps"
+	["id secondary-ctrl-list"]="list-secondary"
+	["id ns-ind"]="cmdset-ind-id-ns"
+	["id ns-descs"]="ns-descs"
+	["id nvmset"]="id-nvmset"
+	["id uuid"]="id-uuid"
+	["id iocs"]="id-iocs"
+	["id domain"]="id-domain"
+	["id endgrp-list"]="list-endgrp"
+
+	# ns plugin
+	["ns create"]="create-ns"
+	["ns delete"]="delete-ns"
+	["ns attach"]="attach-ns"
+	["ns detach"]="detach-ns"
+	["ns get-id"]="get-ns-id"
+
+	# resv plugin
+	["resv acquire"]="resv-acquire"
+	["resv register"]="resv-register"
+	["resv release"]="resv-release"
+	["resv report"]="resv-report"
+
+	# nvme-mi plugin
+	["nvme-mi recv"]="nvme-mi-recv"
+	["nvme-mi send"]="nvme-mi-send"
+
+	# io-mgmt plugin
+	["io-mgmt recv"]="io-mgmt-recv"
+	["io-mgmt send"]="io-mgmt-send"
+
+	# dir plugin
+	["dir receive"]="dir-receive"
+	["dir send"]="dir-send"
+
+	# security plugin
+	["security send"]="security-send"
+	["security recv"]="security-recv"
+
+	# fw plugin
+	["fw commit"]="fw-commit"
+	["fw download"]="fw-download"
+)
+
+_nvme_cmd() {
+	_nvme_cli_detect_version
+	if [[ "${_nvme_cli_version}" == "3" ]]; then
+		echo "$1"
+	else
+		echo "${_NVME_CMD_MAP[$1]}"
 	fi
 }
 
-_nvme_gen_kxchap_key() {
-	_nvme_kxchap_cmd_style
-	case "$_nvme_kxchap_style" in
-	3)
-		nvme keys gen-kxchap "$@"
-		;;
-	2)
-		nvme gen-dhchap-key "$@"
-		;;
-	*)
-		return 1
-		;;
-	esac
+# Run "nvme <resolved subcommand> $@" for a current (>=3.0) top-level
+# command name, e.g. `_nvme_run "id ctrl" "$dev"` runs
+# `nvme id ctrl "$dev"` on >=3.0 or `nvme id-ctrl "$dev"` on 2.x.
+_nvme_run() {
+	local current=$1
+	shift
+
+	# shellcheck disable=SC2046
+	nvme $(_nvme_cmd "$current") "$@"
 }
 
-_nvme_gen_tls_key() {
-	_nvme_tls_cmd_style
-	case "$_nvme_tls_style" in
-	3)
-		nvme keys gen-tls "$@"
-		;;
-	2)
-		nvme gen-tls-key "$@"
-		;;
-	*)
-		return 1
-		;;
-	esac
+_nvme_gen_kxchap_secret() {
+	_nvme_cli_detect_version
+
+	if [[ "${_nvme_cli_version}" == "3" ]]; then
+		local -a kxchap_args=()
+
+		while (($#)); do
+			case "$1" in
+			--key-length=*)
+				kxchap_args+=("--secret-length=${1#--key-length=}")
+				;;
+			--key-length)
+				kxchap_args+=("--secret-length" "$2")
+				shift
+				;;
+			*)
+				kxchap_args+=("$1")
+				;;
+			esac
+			shift
+		done
+		set -- "${kxchap_args[@]}"
+	fi
+
+	_nvme_run "keys gen-kxchap-secret" "$@"
 }
 
 _require_nvme_trtype() {
@@ -1441,7 +1543,7 @@ _test_dev_has_no_metadata() {
 _test_dev_disables_extended_lba() {
 	local flbas
 
-	if ! _test_dev_is_nvme || ! flbas=$(nvme id-ns "$TEST_DEV" | \
+	if ! _test_dev_is_nvme || ! flbas=$(_nvme_run "id ns" "$TEST_DEV" | \
 	   grep flbas | sed --quiet 's/.*: \(.*\)/\1/p'); then
 		SKIP_REASONS+=("$TEST_DEV does not have namespace flbas field")
 		return 1
@@ -1468,6 +1570,7 @@ _require_nvme_test_img_size() {
 }
 
 _nvme_requires() {
+	_nvme_cli_detect_version
 	_require_nvme_test_img_size 4m
 	case ${nvme_trtype} in
 	loop)

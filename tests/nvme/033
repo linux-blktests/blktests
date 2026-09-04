@@ -25,8 +25,8 @@ set_conditions() {
 nvme_info() {
 	local ns=$1
 
-	nvme id-ctrl "${ns}" | grep -E '^(vid|sn|mn|fr) '
-	nvme id-ns "${ns}" | grep -E '^(nsze|ncap) '
+	_nvme_run "id ctrl" "${ns}" | grep -E '^(vid|sn|mn|fr) '
+	_nvme_run "id ns" "${ns}" | grep -E '^(nsze|ncap) '
 }
 
 compare_dev_info() {

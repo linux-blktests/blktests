@@ -32,7 +32,7 @@ test() {
 
 	ns=$(_find_nvme_ns "${def_subsys_uuid}")
 
-	if ! nvme smart-log "/dev/${ns}" >> "$FULL" 2>&1; then
+	if ! _nvme_run "log smart" "/dev/${ns}" >> "$FULL" 2>&1; then
 		echo "ERROR: smart-log bdev-ns failed"
 	fi
 
