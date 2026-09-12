@@ -272,7 +272,7 @@ _cleanup_nvmet() {
 	if [[ "${nvme_trtype}" == "fc" ]]; then
 		for host_port in $(_get_fc_host_ports); do
 			_nvme_fcloop_del_lport "$(_host_wwnn "$host_port")" \
-					       "$(_host_wwpn "$host_port")"
+					       "$(_host_wwpn "$host_port")"  2> /dev/null
 		done
 	fi
 	if [[ "${nvme_trtype}" == "rdma" ]]; then
@@ -1402,6 +1402,13 @@ _nvmet_target_cleanup() {
 	done
 	_remove_nvmet_subsystem "${subsysnqn}"
 	_remove_nvmet_host "${def_hostnqn}"
+
+	if [[ "${nvme_trtype}" == "fc" ]]; then
+		_nvme_fcloop_del_lport "${def_local_wwnn}" "${def_local_wwpn}"
+	fi
+	if [[ "${nvme_trtype}" == "rdma" ]]; then
+		stop_soft_rdma
+	fi
 
 	if [[ "${blkdev_type}" == "device" ]]; then
 		_cleanup_blkdev
