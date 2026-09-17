@@ -25,7 +25,7 @@ The dependencies are minimal, but make sure you have them installed:
 Some tests require the following:
 
 - e2fsprogs, xfsprogs, f2fs-tools and btrfs-progs
-- nvme-cli
+- nvme-cli (>= 3.0)
 - multipath-tools (Debian, openSUSE, Arch Linux) or device-mapper-multipath
   (Fedora)
 - nbd-client and nbd-server (Debian) or nbd (Fedora, openSUSE, Arch Linux)
