@@ -23,6 +23,7 @@ requires() {
 test() {
 	local block_size
 	local mount_dir="${TMPDIR}/mnt"
+	local read_bounce="/sys/fs/xfs/nullb1/csum/read_bounce"
 	local test_file="${mount_dir}/target"
 
 	echo "Running ${TEST_NAME}"
@@ -42,6 +43,24 @@ test() {
 		_exit_null_blk
 		return
 	fi
+
+	# The lazy XFS read-bounce implementation replaced the legacy block-layer
+	# path whose special bvec layout this test exercises.
+	if [[ -e "${read_bounce}" ]]; then
+		if ! umount "${mount_dir}" >>"${FULL}" 2>&1; then
+			echo "failed to unmount XFS"
+			_exit_null_blk
+			return 1
+		fi
+		rm -rf "${mount_dir}"
+		if ! _exit_null_blk; then
+			echo "failed to remove null_blk"
+			return 1
+		fi
+		SKIP_REASONS+=("legacy read-bounce implementation is not present")
+		return
+	fi
+
 	dd if=/dev/zero of="${test_file}" bs=1M count=1 conv=fsync \
 		status=none
 	block_size=$(blockdev --getss /dev/nullb1)
