@@ -157,12 +157,22 @@ _dmesg_since_test_start()
 _check_dmesg() {
 	local dmesg_marker="$1"
 	local seqres="${RESULTS_DIR}/${TEST_NAME}"
+	local grep_ignore_cmd=(cat)
+	local keyword
 
 	if [[ $CHECK_DMESG -eq 0 ]]; then
 		return 0
 	fi
 
-	_dmesg_since_test_start | bash -c "$DMESG_FILTER" >"${seqres}.dmesg"
+	if ((${#DMESG_IGNORE[@]} > 0)); then
+		grep_ignore_cmd=(grep --invert-match)
+		for keyword in "${DMESG_IGNORE[@]}"; do
+			grep_ignore_cmd+=(--regexp "$keyword")
+		done
+	fi
+
+	_dmesg_since_test_start | "${grep_ignore_cmd[@]}" | \
+		bash -c "$DMESG_FILTER" >"${seqres}.dmesg"
 	grep -q -e "kernel BUG at" \
 	     -e "WARNING:" \
 	     -e "BUG:" \
@@ -1584,6 +1594,10 @@ if [[ "${TEST_DEVS:-}" ]] && ! declare -p TEST_DEVS | grep -q '^declare -a'; the
 	TEST_DEVS=($TEST_DEVS)
 elif [[ ! "${TEST_DEVS:-}" ]]; then
 	TEST_DEVS=()
+fi
+
+if [[ ! "${DMESG_IGNORE:-}" ]]; then
+	DMESG_IGNORE=()
 fi
 
 : "${LOGGER_PROG:="$(type -P logger || echo true)"}"
