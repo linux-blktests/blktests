@@ -109,6 +109,19 @@ passing the `-d` command line option or setting the `DEVICE_ONLY` variable.
 DEVICE_ONLY=1
 ```
 
+### Dmesg Exceptions
+
+Blktests checks dmesg outputs during each test case run, and report failure of
+the test case run if any unexpected words are found in the output, such as
+"BUG:" or "WARNING:". Sometimes it's useful ignore specific dmesg messages,
+because the messages are known and expected. In such a case, users can specify
+the keywords to ignore in the array DMESG_IGNORE. The lines in dmesg that
+matches one of the keywords are ignored and do not cause the test case failure.
+
+```sh
+DMESG_IGNORE=("at cleanup_srcu_struct")
+```
+
 ### Zoned Block Device
 
 To run test cases for zoned block devices, set the `RUN_ZONED_TESTS` variable.
