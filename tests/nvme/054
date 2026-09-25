@@ -37,6 +37,7 @@ resv_field() {
 
 	echo "${report}" | \
 		sed -n -E "s/^(${field}|${alt_field})[[:space:]]*:[[:space:]]*//p" | \
+		sed -E 's/[[:space:]]+$//' | \
 		head -1
 }
 
@@ -50,6 +51,7 @@ resv_registrant_field() {
 
 	echo "${report}" | \
 		sed -n -E "s/^[[:space:]]+${field}[[:space:]]*:[[:space:]]*//p" | \
+		sed -E 's/[[:space:]]+$//' | \
 		sed -n "$((idx + 1))p"
 }
 
