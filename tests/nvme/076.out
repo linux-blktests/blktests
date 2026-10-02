@@ -1,0 +1,9 @@
+Running nvme/076
+Preempt another registrant by the holder
+Preempt and abort another registrant by the holder
+Preempt another registrant by the holder of a write exclusive reservation
+Preempt with PRKEY 0 by the holder
+Preempt the holder by itself
+Preempt another registrant by a non-holder
+Preempt the holder by a non-holder
+Test complete

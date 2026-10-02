@@ -1,0 +1,256 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Samsung Electronics Co., Ltd.
+#
+# Test the Preempt and the Preempt and Abort actions of the Reservation Acquire
+# command with three hosts registered on one namespace. The action depends on
+# the PRKEY field regardless of which registrant sends the command (NVMe Base
+# Specification 2.1, section 8.1.22.7). The target used to handle every preempt
+# sent by the reservation holder as the holder preempting itself, which left
+# the registrants selected by PRKEY registered.
+#
+# Each command has to go to the controller of one specific host. The hosts
+# connect to the same subsystem from one machine, so with native multipath they
+# share a single namespace block device and only the controller character
+# devices tell them apart. An I/O command sent to a controller character device
+# uses NVME_IOCTL_IO_CMD, which works while the controller has one namespace
+# and makes the kernel log "using deprecated NVME_IOCTL_IO_CMD ioctl on the
+# char device!" for each command.
+#
+# This test confirms the fix by the kernel commit d9e84d4e1999 ("nvmet: fix
+# preempt of another registrant by the reservation holder").
+#
+. tests/nvme/rc
+
+DESCRIPTION="Test NVMe reservation preempt with multiple hosts"
+QUICK=1
+
+requires() {
+	_nvme_requires
+	_require_nvme_trtype_is_fabrics
+	_require_kernel_nvme_target
+}
+
+set_conditions() {
+	_set_nvme_trtype "$@"
+}
+
+# Host i registers with the reservation key i + 1.
+hostids=(
+	"${def_hostid}"
+	"1f01fb42-9f7f-4856-b0b3-51e60b8de349"
+	"2f01fb42-9f7f-4856-b0b3-51e60b8de349"
+)
+ctrls=()
+nsid=""
+report_arg="--cdw11=1"
+
+hostnqn_of() {
+	if [[ "${hostids[$1]}" == "${def_hostid}" ]]; then
+		echo "${def_hostnqn}"
+	else
+		echo "nqn.2014-08.org.nvmexpress:uuid:${hostids[$1]}"
+	fi
+}
+
+find_ctrl_by_hostid() {
+	local hostid=$1
+	local dev
+
+	for dev in /sys/class/nvme/nvme*; do
+		[[ -e "${dev}/hostid" ]] || continue
+		[[ "$(cat "${dev}/subsysnqn" 2>/dev/null)" == "${def_subsysnqn}" ]] || \
+			continue
+		if [[ "$(cat "${dev}/hostid" 2>/dev/null)" == "${hostid}" ]]; then
+			basename "${dev}"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Wait until the controller has set up its namespace.
+wait_ctrl_ns() {
+	local ctrl=$1
+	local i
+
+	for ((i = 0; i < 50; i++)); do
+		compgen -G "/sys/class/nvme/${ctrl}/nvme*n*" > /dev/null && \
+			return 0
+		sleep .1
+	done
+	return 1
+}
+
+# Send a reservation command as the host with the given index.
+resv_cmd() {
+	local cmd=$1
+	local host=$2
+
+	shift 2
+	_nvme_run "resv ${cmd}" "/dev/${ctrls[${host}]}" \
+		--namespace-id="${nsid}" "$@"
+}
+
+nvme_resv() {
+	if ! resv_cmd "$@" >> "${FULL}" 2>&1; then
+		echo "FAIL: nvme resv-$1 failed on host $2 with args: ${*:3}"
+		return 1
+	fi
+}
+
+nvme_resv_expect_invalid_field() {
+	local out
+
+	if out=$(resv_cmd "$@" 2>&1); then
+		echo "FAIL: nvme resv-$1 succeeded on host $2 with args: ${*:3}"
+		return 1
+	fi
+	echo "${out}" >> "${FULL}"
+	if ! echo "${out}" | grep -qi "invalid field"; then
+		echo "FAIL: nvme resv-$1 on host $2 did not fail with Invalid Field in Command"
+		return 1
+	fi
+}
+
+# Check the reservation type and the registrants. The registrants are given as
+# a sorted list of "<rkey>:<rcsts>", where rcsts is 1 for the reservation
+# holder.
+check_resv() {
+	local exp_rtype=$1
+	local exp_regs=$2
+	local report rtype regs
+
+	report=$(resv_cmd report 0 "${report_arg}")
+	rtype=$(echo "${report}" | \
+		sed -n -E "s/^rtype[[:space:]]*:[[:space:]]*//p" | head -1)
+	regs=$(echo "${report}" | awk '
+		function flush() { if (k != "") print k ":" r; k = ""; r = "" }
+		/^[^[:space:]].*\[[0-9]+\]/ { flush() }
+		/^[[:space:]]+rcsts[[:space:]]*:/ { r = $NF }
+		/^[[:space:]]+rkey[[:space:]]*:/ { k = $NF }
+		END { flush() }' | sort | xargs)
+
+	[[ "${rtype}" == "${exp_rtype}" ]] || \
+		echo "FAIL: expected rtype ${exp_rtype}, got '${rtype}'"
+	[[ "${regs}" == "${exp_regs}" ]] || \
+		echo "FAIL: expected registrants '${exp_regs}', got '${regs}'"
+}
+
+# Register all hosts and let host 0 acquire a reservation of the given type.
+resv_setup() {
+	local rtype=$1
+	local i
+
+	for i in "${!ctrls[@]}"; do
+		nvme_resv register "${i}" --nrkey="$((i + 1))" --rrega=0
+	done
+	nvme_resv acquire 0 --crkey=1 --rtype="${rtype}" --racqa=0
+}
+
+# Clear the reservation and all registrations. Host 2 is never unregistered by
+# this test.
+resv_clear() {
+	nvme_resv release 2 --crkey=3 --rrela=1
+	check_resv 0 ""
+}
+
+test_preempt() {
+	echo "Preempt another registrant by the holder"
+	resv_setup 4
+	check_resv 4 "1:1 2:0 3:0"
+	nvme_resv acquire 0 --crkey=1 --prkey=2 --rtype=3 --racqa=1
+	check_resv 4 "1:1 3:0"
+	resv_clear
+
+	echo "Preempt and abort another registrant by the holder"
+	resv_setup 4
+	nvme_resv acquire 0 --crkey=1 --prkey=2 --rtype=4 --racqa=2
+	check_resv 4 "1:1 3:0"
+	resv_clear
+
+	echo "Preempt another registrant by the holder of a write exclusive reservation"
+	resv_setup 1
+	nvme_resv acquire 0 --crkey=1 --prkey=2 --rtype=1 --racqa=1
+	check_resv 1 "1:1 3:0"
+	resv_clear
+
+	echo "Preempt with PRKEY 0 by the holder"
+	resv_setup 4
+	nvme_resv_expect_invalid_field acquire 0 --crkey=1 --prkey=0 --rtype=3 \
+		--racqa=1
+	check_resv 4 "1:1 2:0 3:0"
+	resv_clear
+
+	echo "Preempt the holder by itself"
+	resv_setup 4
+	nvme_resv acquire 0 --crkey=1 --prkey=1 --rtype=3 --racqa=1
+	check_resv 3 "1:1 2:0 3:0"
+	resv_clear
+
+	echo "Preempt another registrant by a non-holder"
+	resv_setup 4
+	nvme_resv acquire 2 --crkey=3 --prkey=2 --rtype=3 --racqa=1
+	check_resv 4 "1:1 3:0"
+	resv_clear
+
+	echo "Preempt the holder by a non-holder"
+	resv_setup 4
+	nvme_resv acquire 2 --crkey=3 --prkey=1 --rtype=3 --racqa=1
+	check_resv 3 "2:0 3:1"
+	resv_clear
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	_setup_nvmet
+
+	local ns i ctrl
+	local skipped=false
+	local ns_path
+
+	# test() runs once for each transport
+	ctrls=()
+
+	_nvmet_target_setup --blkdev file --resv_enable
+	for i in 1 2; do
+		_create_nvmet_host "${def_subsysnqn}" "$(hostnqn_of "${i}")"
+	done
+	for i in "${!hostids[@]}"; do
+		_nvme_connect_subsys --hostnqn "$(hostnqn_of "${i}")" \
+			--hostid "${hostids[${i}]}"
+		ctrl=$(find_ctrl_by_hostid "${hostids[${i}]}")
+		if [[ -z "${ctrl}" ]] || ! wait_ctrl_ns "${ctrl}"; then
+			echo "FAIL: no controller with a namespace for host ${i}"
+		fi
+		ctrls+=("${ctrl}")
+	done
+
+	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+	nsid=$(cat "/sys/block/${ns}/nsid")
+	ns_path="${NVMET_CFS}/subsystems/${def_subsysnqn}/namespaces/${nsid}"
+
+	if _nvme_run "resv report" --help 2>&1 | grep -- '--eds' > /dev/null; then
+		report_arg="--eds"
+	fi
+
+	if [[ -f "${ns_path}/resv_enable" ]] ; then
+		test_preempt
+	else
+		SKIP_REASONS+=("missing reservation feature")
+		skipped=true
+	fi
+
+	_nvme_disconnect_subsys
+	_nvmet_target_cleanup
+	for i in 1 2; do
+		_remove_nvmet_host "$(hostnqn_of "${i}")"
+	done
+
+	if [[ "${skipped}" = true ]] ; then
+		return 1
+	fi
+
+	echo "Test complete"
+}
