@@ -1,0 +1,68 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Shashank Mohan Jain
+#
+# Regression test for the BLKREPORTZONEV2 zone report ioctl.
+#
+# It sets up zoned null_blk devices whose last zone is smaller than the
+# zone size and checks two properties of block/blk-zoned.c:
+#
+#   1) BLKREPORTZONEV2 without BLK_ZONE_REP_CACHED returns the same report
+#      as the legacy BLKREPORTZONE (a report read from the device), not the
+#      cached report.  Before the fix, flags == 0 always returned the cached
+#      report, so open/closed zones could not be told apart.
+#
+#   2) In the cached report, a smaller last zone has its real length, so
+#      start + len never exceeds the device capacity.  Before the fix the
+#      last zone was reported with the full zone size.
+#
+# The ioctls are issued by the src/zone_report_cached helper: util-linux
+# blkzone does not yet expose BLK_ZONE_REP_CACHED, so the test does not
+# depend on the blkzone version.
+
+. tests/zbd/rc
+. common/null_blk
+
+DESCRIPTION="BLKREPORTZONEV2 cached-report flag and smaller last zone"
+QUICK=1
+
+requires() {
+	_have_src_program zone_report_cached
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	# 10 MiB device, 4 MiB zones: two full 4 MiB zones and a smaller
+	# 2 MiB last zone, all sequential.
+	if ! _configure_null_blk nullb_zbd_015_seq blocksize=4096 zoned=1 \
+			zone_size=4 zone_nr_conv=0 memory_backed=1 size=10 \
+			power=1; then
+		return 1
+	fi
+
+	# Same geometry with two conventional zones ahead of the smaller
+	# last sequential zone.
+	if ! _configure_null_blk nullb_zbd_015_conv blocksize=4096 zoned=1 \
+			zone_size=4 zone_nr_conv=2 memory_backed=1 size=10 \
+			power=1; then
+		_exit_null_blk
+		return 1
+	fi
+
+	# All-sequential device: open zone 0 and write+close zone 1 first,
+	# so the device report and the cached report differ in the zone
+	# conditions.
+	if ! src/zone_report_cached /dev/nullb_zbd_015_seq rw >>"$FULL" 2>&1; then
+		echo "/dev/nullb_zbd_015_seq: BLKREPORTZONEV2 report check failed"
+	fi
+
+	# Conventional + smaller last zone, reported at rest.
+	if ! src/zone_report_cached /dev/nullb_zbd_015_conv ro >>"$FULL" 2>&1; then
+		echo "/dev/nullb_zbd_015_conv: BLKREPORTZONEV2 report check failed"
+	fi
+
+	_exit_null_blk
+
+	echo "Test complete"
+}

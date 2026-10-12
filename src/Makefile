@@ -28,7 +28,8 @@ C_TARGETS := \
 	nbdsetsize \
 	openclose \
 	sg/dxfer-from-dev \
-	zbdioctl
+	zbdioctl \
+	zone_report_cached
 
 C_URING_TARGETS := metadata \
 	nvme-passthru-admin-uring
