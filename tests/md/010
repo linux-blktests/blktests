@@ -1,0 +1,59 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Sebastian Chlad, SUSE
+#
+# Basic sanity test: create a RAID 5 array on real block devices (e.g.
+# QEMU-attached scratch disks provided via TEST_DEVS), verify it comes up
+# active, write to it with fio, then tear it down.
+#
+# Unlike raid sanity tests using brd-backed, this exercises real device I/O,
+# closer to how these arrays are actually used in production and more likely
+# to surface timing-dependent issues that brd's near-instant ram-backed I/O
+# cannot.
+
+. tests/md/rc
+
+DESCRIPTION="create a RAID 5 array on real block devices and verify it is active"
+QUICK=1
+
+requires() {
+	_have_driver raid5
+	_have_fio
+}
+
+device_requires() {
+	_require_test_dev_size 512m
+}
+
+test_device_array() {
+	echo "Running ${TEST_NAME}"
+
+	local mddev="/dev/md/blktests_md_${TEST_NAME##*/}"
+
+	if [[ ${#TEST_DEV_ARRAY[@]} -lt 3 ]]; then
+		SKIP_REASONS+=("requires at least 3 test devices")
+		return 1
+	fi
+
+	mdadm --create --run --quiet "$mddev" \
+		--level=5 --raid-devices=3 --assume-clean \
+		"${TEST_DEV_ARRAY[0]}" "${TEST_DEV_ARRAY[1]}" "${TEST_DEV_ARRAY[2]}"
+
+	udevadm settle
+
+	if ! _md_is_level "$mddev" raid5; then
+		echo "array is not raid5"
+		_md_detail "$mddev"
+	fi
+
+	if ! _md_is_healthy "$mddev"; then
+		echo "array did not reach a healthy state"
+		_md_detail "$mddev"
+	fi
+
+	_run_fio_verify_io --filename="$mddev" --size=64M
+
+	mdadm --quiet --stop "$mddev" >/dev/null 2>&1
+
+	echo "Test complete"
+}
