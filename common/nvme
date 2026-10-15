@@ -220,6 +220,14 @@ _require_nvme_trtype_is_fabrics() {
 	return 0
 }
 
+_enable_nvmet_debug() {
+	echo "module nvmet +p" > /sys/kernel/debug/dynamic_debug/control
+}
+
+_disable_nvmet_debug() {
+	echo "module nvmet -p" > /sys/kernel/debug/dynamic_debug/control
+}
+
 _have_nvme_cli_with_json_support() {
 	_have_program nvme || return $?
 
