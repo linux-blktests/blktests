@@ -1,0 +1,132 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Jesse Taube <jtaubepe@redhat.com>
+#
+# Test nvmet configurable traffic based keep-alive (tbkas)
+
+. tests/nvme/rc
+
+DESCRIPTION="Test nvmet configurable traffic based keep-alive (tbkas)"
+
+requires() {
+	_nvme_requires
+	_have_loop
+	_have_fio
+	_require_nvme_trtype_is_fabrics
+	_have_kernel_options DYNAMIC_DEBUG NVME_TARGET_DEBUGFS
+	_have_debugfs
+}
+
+set_conditions() {
+	_set_nvme_trtype "$@"
+}
+
+_nvmet_tbkas_available() {
+	local subsystem="${def_subsysnqn}"
+	local cfs_path
+
+	cfs_path="${NVMET_CFS}/subsystems/${subsystem}"
+
+	[[ -w "${cfs_path}/attr_tbkas" ]]
+}
+
+_nvmet_assign_tbkas() {
+	local value="$1"
+	local subsystem="${def_subsysnqn}"
+	local cfs_path
+
+	cfs_path="${NVMET_CFS}/subsystems/${subsystem}"
+	_set_attr "${value}" "${cfs_path}/attr_tbkas"
+}
+
+_enable_nvmet_debug() {
+	echo "module nvmet +p" > /sys/kernel/debug/dynamic_debug/control
+}
+
+_disable_nvmet_debug() {
+	echo "module nvmet -p" > /sys/kernel/debug/dynamic_debug/control
+}
+
+check_dmesg_tbkas() {
+	local ctrl_num="$1"
+	_dmesg_since_test_start | grep --quiet "ctrl ${ctrl_num} reschedule traffic based keep-alive timer"
+	# Returns Success or Fail
+}
+
+check_dmesg_admin_keep_alive() {
+	local ctrl_num="$1"
+
+	_dmesg_since_test_start | grep --quiet "ctrl ${ctrl_num} update keep-alive timer for"
+	# Returns Success or Fail
+}
+
+_get_ctrl_num() {
+	local subsystem="${def_subsysnqn}"
+	local dfs_path="${NVMET_DFS}/${subsystem}"
+
+	find "${dfs_path}" -maxdepth 1  -name "ctrl*" -printf "%f\n" | sed 's/ctrl//'
+}
+
+test() {
+	local fio_pid
+	local ns
+	local ctrl_num
+
+	echo "Running ${TEST_NAME}"
+
+	_setup_nvmet
+
+	_nvmet_target_setup --ports 1
+
+	if ! _nvmet_tbkas_available; then
+		SKIP_REASONS+=("nvmet doesn't support configurable tbkas")
+		_nvmet_target_cleanup
+		return 1
+	fi
+
+	_nvme_connect_subsys --port 0 --no-wait-ns
+
+	# start fio job
+	ns=$(_find_nvme_ns "${def_subsys_uuid}")
+	set -m
+	_run_fio_verify_io --filename="/dev/${ns}" \
+			   --group_reporting --ramp_time=5 \
+			   --time_based --runtime=2m &> "${FULL}" &
+	set +m
+	fio_pid=$!
+	sleep 5
+
+	_enable_nvmet_debug
+	sleep 30
+
+	ctrl_num=$(_get_ctrl_num)
+	if [ -z "${ctrl_num}" ]; then
+		echo "Failed to find ctrl number"
+		# If we can't find the ctrl number, assume controller 1
+		ctrl_num="1"
+	fi
+	check_dmesg_tbkas "${ctrl_num}" \
+		&& echo "TBKAS message found in dmesg: pass" \
+		|| echo "TBKAS message not found in dmesg: fail"
+	_nvmet_assign_tbkas 0
+	sleep 30
+
+	ctrl_num=$(_get_ctrl_num)
+	if [ -z "${ctrl_num}" ]; then
+		echo "Failed to find ctrl number"
+		# If we can't find the ctrl number, assume controller 2
+		# as we reconnected the controller
+		ctrl_num="2"
+	fi
+	check_dmesg_admin_keep_alive "${ctrl_num}" \
+		&& echo "Admin keep-alive message found in dmesg: pass" \
+		|| echo "Admin keep-alive message not found in dmesg: fail"
+
+	_disable_nvmet_debug
+	{ kill -- -"${fio_pid}"; wait; } &> /dev/null
+
+	_nvme_disconnect_subsys
+	_nvmet_target_cleanup
+
+	echo "Test complete"
+}
