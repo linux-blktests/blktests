@@ -457,3 +457,27 @@ _md_atomics_test() {
 		done
 	done
 }
+
+# Run mdadm --detail once and return its raw, human-readable output, for
+# diagnostic dumps when _md_is_level()/_md_is_healthy() below report a
+# problem.
+_md_detail() {
+	mdadm --detail "$1"
+}
+
+_md_is_level() {
+	local device="$1" level="$2"
+
+	mdadm --detail --export "$device" | grep -qx "MD_LEVEL=${level}"
+}
+
+# Is the array complete and healthy? Delegates to mdadm --detail --test's
+# exit status (0 ok, 1 degraded, 2 dead, 4 missing).
+_md_is_healthy() {
+	mdadm --detail --test "$1" >/dev/null
+}
+
+# Does any device in the array currently show as faulty?
+_md_is_faulty() {
+	_md_detail "$1" | grep -q faulty
+}
