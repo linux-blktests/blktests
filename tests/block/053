@@ -1,0 +1,41 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Tal Zussman
+#
+# Issue a RWF_ATOMIC direct write to a block device from a buffer whose last
+# page cannot be pinned. The direct I/O path has to fail it rather than
+# submit the pinned part as a hardware atomic write and tear the write.
+#
+# Regression test for commit 73a0ff6030af ("block: fail a short atomic pin in
+# bio_iov_iter_get_pages()").
+
+. tests/block/rc
+. common/scsi_debug
+
+DESCRIPTION="check that a partially pinned atomic write is not torn"
+QUICK=1
+
+requires() {
+	_have_scsi_debug && _have_module_param scsi_debug atomic_wr
+	_have_src_program atomic-write-untorn
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	# The helper writes two pages atomically. An atomic write unit max of
+	# 256 blocks, 128K, covers page sizes up to 64K.
+	if ! _configure_scsi_debug delay=0 atomic_wr=1 atomic_wr_max_length=256 \
+	     dev_size_mb=16; then
+		echo "configuring scsi_debug failed"
+		return 1
+	fi
+
+	if ! src/atomic-write-untorn "/dev/${SCSI_DEBUG_DEVICES[0]}" >>"${FULL}" 2>&1; then
+		echo "atomic-write-untorn helper failed"
+	fi
+
+	_exit_scsi_debug
+
+	echo "Test complete"
+}

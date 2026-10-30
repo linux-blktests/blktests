@@ -36,18 +36,26 @@ C_URING_TARGETS := metadata \
 	metadata-iopoll \
 	nvme-passthru-admin-uring
 C_UBLK_TARGETS := miniublk
+C_ATOMIC_WRITE_TARGETS := atomic-write-untorn
 C_THREAD_TARGETS := dio-fallback-race \
 	splice-race
 
 HAVE_LIBURING := $(call HAVE_C_MACRO,liburing.h,IORING_OP_URING_CMD)
 HAVE_UBLK_HEADER := $(call HAVE_C_HEADER,linux/ublk_cmd.h,1)
 HAVE_NEW_UBLK_INTF := $(call HAVE_C_DEF,linux/ublk_cmd.h,UBLK_U_CMD_START_DEV)
+HAVE_STATX_WRITE_ATOMIC := $(call HAVE_C_DEF,linux/stat.h,STATX_ATTR_WRITE_ATOMIC)
 
 CXX_TARGETS := \
 	discontiguous-io
 
 SYZKALLER_TARGETS := \
 	sg/syzkaller1
+
+ifeq ($(HAVE_STATX_WRITE_ATOMIC), 1)
+C_TARGETS += $(C_ATOMIC_WRITE_TARGETS)
+else
+$(info Skip $(C_ATOMIC_WRITE_TARGETS) build due to missing kernel header(v6.11+))
+endif
 
 TARGETS := $(C_TARGETS) $(C_THREAD_TARGETS) $(CXX_TARGETS) $(SYZKALLER_TARGETS)
 

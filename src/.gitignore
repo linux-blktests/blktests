@@ -1,3 +1,4 @@
+/atomic-write-untorn
 /bio-bounce-read
 /bio-full-trim
 /bio-trim-pin-leak
