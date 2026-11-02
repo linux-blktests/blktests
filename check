@@ -489,12 +489,12 @@ _call_test() {
 			set -x
 		fi
 		{ time "$test_func" >"${seqres}.out" 2>&1; } 2>"${seqres}.runtime"
+		TEST_RUN["exit_status"]=$?
 		if ((CMD_TRACE)); then
 			set +x
 			unset BASH_XTRACEFD
 			exec 8>&-
 		fi
-		TEST_RUN["exit_status"]=$?
 		popd >/dev/null || return
 		TEST_RUN["runtime"]="$(cat "${seqres}.runtime")"
 		rm -f "${seqres}.runtime"
