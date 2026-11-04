@@ -24,3 +24,4 @@
 /nvme-delay-ioctl
 /nvme-sentinel-read
 /nvme-zone-report
+/nvme-ana-log

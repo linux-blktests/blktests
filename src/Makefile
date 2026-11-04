@@ -24,6 +24,7 @@ C_TARGETS := \
 	mount_clear_sock \
 	nvme-delay-ioctl \
 	nvme-passthrough-meta \
+	nvme-ana-log \
 	nvme-sentinel-read \
 	nvme-zone-report \
 	ioctl-lbmd-query \
