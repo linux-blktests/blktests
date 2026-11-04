@@ -1668,6 +1668,7 @@ _nvmet_target_add_ports() {
 	local host_port=0
 	local tls="none"
 	local cfs_path
+	local -a ARGS
 
 	while [[ $# -gt 0 ]]; do
 		case $1 in
@@ -1734,7 +1735,7 @@ _nvmet_target_add_ports() {
 		return
 	fi
 
-	cfs_path="${NVMET_CFS}/subsystems/${subsystem}"
+	cfs_path="${NVMET_CFS}/subsystems/${subsysnqn}"
 	if [[ ! -d "${cfs_path}" ]]; then
 		echo "Can not add ports to a non-existent subsystem. subsystem not found"
 		return 1;
