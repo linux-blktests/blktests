@@ -1,0 +1,106 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (c) 2026 SUSE LLC and contributors
+#
+# Test that no queue type gets more I/O queues than there are online CPUs.
+# nvmf_nr_io_queues limits each queue type to the number of online CPUs when
+# asking for I/O queues, but nvmf_set_io_queues used to hand out the granted
+# queues without these limits. With nr_write_queues larger than the number of
+# online CPUs, the default queues got more queues than CPUs, some hardware
+# contexts had no CPU mapped and connecting their I/O queues failed.
+#
+# The bug was introduced for nvme-tcp by commit 6486199378a5 ("nvme-tcp: fix
+# queue mapping when queue count is limited") and for nvme-rdma by commit
+# a249d3066de6 ("nvme-fabrics: add queue setup helpers").
+#
+# Regression test for commit 99fd0cbae849 ("nvme-fabrics: limit each queue
+# type to the number of online CPUs").
+
+. tests/nvme/rc
+
+DESCRIPTION="Test I/O queue limits per queue type"
+QUICK=1
+
+requires() {
+	_nvme_requires
+	_have_fio
+	_have_loop
+	_have_debugfs
+	_require_nvme_trtype tcp rdma
+}
+
+set_conditions() {
+	_set_nvme_trtype "$@"
+}
+
+# Check that every hardware context has a software context mapped and that no
+# queue type has more hardware contexts than there are online CPUs.
+check_hctxs() {
+	local nvmedev="$1"
+	local nr_cpus="$2"
+	local disk
+	local hctx
+	local type
+	local -A nr_type=()
+
+	disk=$(basename /sys/class/nvme/"${nvmedev}"/nvme*n*)
+	for hctx in /sys/block/"${disk}"/mq/*; do
+		if ! compgen -G "${hctx}/cpu*[0-9]" > /dev/null; then
+			echo "FAIL: hctx $(basename "${hctx}") has no CPU mapped"
+		fi
+	done
+
+	for hctx in /sys/kernel/debug/block/"${disk}"/hctx*; do
+		type=$(cat "${hctx}/type")
+		nr_type[${type}]=$((${nr_type[${type}]:-0} + 1))
+	done
+	for type in "${!nr_type[@]}"; do
+		if [[ "${nr_type[${type}]}" -gt "${nr_cpus}" ]]; then
+			echo "FAIL: ${nr_type[${type}]} ${type} queues for ${nr_cpus} CPUs"
+		fi
+	done
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	local cfs_path="${NVMET_CFS}/subsystems/${def_subsysnqn}"
+	local nr_cpus
+	local nvmedev
+	local ns
+
+	_setup_nvmet
+
+	nr_cpus=$(getconf _NPROCESSORS_ONLN)
+
+	_nvmet_target_setup
+
+	# The bug only shows if the target grants a queue per online CPU for
+	# each queue type.
+	if [[ -f "${cfs_path}/attr_qid_max" ]] &&
+	   [[ $(cat "${cfs_path}/attr_qid_max") -lt $((3 * nr_cpus)) ]]; then
+		SKIP_REASONS+=("target supports less than $((3 * nr_cpus)) I/O queues")
+		_nvmet_target_cleanup
+		return 1
+	fi
+
+	if _nvme_connect_subsys --nr-io-queues "${nr_cpus}" \
+				--nr-write-queues $((2 * nr_cpus)) \
+				--nr-poll-queues $((2 * nr_cpus)); then
+		_nvmf_wait_for_state "${def_subsysnqn}" "live" || echo FAIL
+		nvmedev=$(_find_nvme_dev "${def_subsysnqn}")
+		check_hctxs "${nvmedev}" "${nr_cpus}"
+
+		ns=$(_find_nvme_ns "${def_subsys_uuid}")
+		_run_fio_verify_io --size=32m --filename="/dev/${ns}" ||
+			echo "FAIL: fio verify"
+
+		_nvme_disconnect_subsys
+	else
+		echo "FAIL: controller not ready"
+	fi
+
+	_nvmet_target_cleanup
+
+	echo "Test complete"
+}
