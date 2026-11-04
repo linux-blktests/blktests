@@ -63,6 +63,19 @@ test() {
 
 	_nvme_connect_subsys
 
+	local ns dev max_bytes
+	ns="$(_find_nvme_ns "${def_subsys_uuid}")"
+	dev="/dev/${ns}"
+
+	# The largest I/O is 1025 blocks, it must fit the maximum transfer size.
+	max_bytes=$(($(cat "/sys/block/${ns}/queue/max_hw_sectors_kb") * 1024))
+	if ((1025 * $(blockdev --getss "$dev") > max_bytes)); then
+		SKIP_REASONS+=("max transfer size ${max_bytes} is smaller than 1025 blocks")
+		_nvme_disconnect_subsys >> "$FULL" 2>&1
+		_nvmet_target_cleanup
+		return 1
+	fi
+
 	# nvme-cli may fail to allocate linear memory for rather large IO buffers.
 	# Increase nr_hugepages to allow nvme-cli to try the linear memory allocation
 	# from HugeTLB pool.
@@ -72,8 +85,6 @@ test() {
 		reset_nr_hugepages=true
 	fi
 
-	local dev
-	dev="/dev/$(_find_nvme_ns "${def_subsys_uuid}")"
 	test_user_io "$dev" 1 512 > "$FULL" 2>&1 || echo FAIL
 	test_user_io "$dev" 1 511 >> "$FULL" 2>&1 || echo FAIL
 	test_user_io "$dev" 1 513 >> "$FULL" 2>&1 || echo FAIL
