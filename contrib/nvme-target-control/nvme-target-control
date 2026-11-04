@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (c) 2026 SUSE LLC and contributors
+"""Set up and tear down remote NVMe targets for blktests.
+
+Point NVME_TARGET_CONTROL at this file, see README.md.
+"""
+
+import sys
+from pathlib import Path
+
+if sys.version_info < (3, 10):
+    sys.exit('nvme-target-control needs Python 3.10 or newer')
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from nvme_target_control.cli import main
+
+sys.exit(main())

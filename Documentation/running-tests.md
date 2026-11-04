@@ -258,3 +258,7 @@ setup:
 
 cleanup:
   --subsysnqn SUBSYSNQN
+
+contrib/nvme-target-control implements this interface. It configures a Linux
+nvmet target over ssh and can be extended for other targets, see
+contrib/nvme-target-control/README.md.

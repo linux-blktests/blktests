@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: GPL-3.0+
+#
+# The linters for nvme-target-control: ruff check and mypy, run from this
+# directory. The tests: python3 -m unittest discover -s tests
+
+[project]
+name = "nvme-target-control"
+version = "0.1.0"
+description = "Set up and tear down remote NVMe targets for blktests"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+# Pure stdlib, Python < 3.11 needs tomli
+dependencies = ["tomli; python_version < '3.11'"]
+
+[tool.ruff]
+line-length = 79
+target-version = "py310"
+extend-include = ["nvme-target-control"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "W",
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # bugbear
+    "UP",   # pyupgrade
+    "SIM",  # simplify
+    "RUF",
+]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["nvme_target_control", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# its start runs with old Pythons, to report the version
+"nvme-target-control" = ["UP036"]
