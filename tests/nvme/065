@@ -17,6 +17,7 @@ requires() {
 	_have_scsi_debug
 	_nvme_requires
 	_require_nvme_trtype_is_fabrics
+	_require_kernel_nvme_target
 }
 
 set_conditions() {

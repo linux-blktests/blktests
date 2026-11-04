@@ -13,6 +13,7 @@ requires() {
 	_have_loop
 	_require_nvme_trtype tcp rdma fc
 	_have_kernel_option NVME_TARGET_DEBUGFS
+	_require_kernel_nvme_target
 }
 
 set_conditions() {
