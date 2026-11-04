@@ -1027,6 +1027,13 @@ _nvme_ns_ready() {
 	local cfs_path="${NVMET_CFS}/subsystems/$subsysnqn"
 
 	dev=$(_find_nvme_dev "$subsysnqn")
+	if [[ -n "${nvme_target_control}" ]]; then
+		# The namespaces are configured on the remote target, wait
+		# for the first one the controller reports.
+		[[ -b /dev/${dev}n1 && -e /sys/block/${dev}n1/uuid &&
+			-e /sys/block/${dev}n1/wwid ]]
+		return
+	fi
 	for ns_path in "${cfs_path}/namespaces/"*; do
 		ns_id=${ns_path##*/}
 		if [[ ! -b /dev/${dev}n${ns_id} ||
