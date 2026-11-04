@@ -1611,7 +1611,7 @@ _nvmet_target_setup() {
 			ARGS+=(--hostkey "${hostkey}")
 		fi
 		if [[ -n "${ctrlkey}" ]]; then
-			ARGS+=(--ctrkey "${ctrlkey}")
+			ARGS+=(--ctrlkey "${ctrlkey}")
 		fi
 
 		"${nvme_target_control}" setup \
@@ -1708,7 +1708,7 @@ _nvmet_target_add_ports() {
 			ARGS+=(--hostkey "${hostkey}")
 		fi
 		if [[ -n "${ctrlkey}" ]]; then
-			ARGS+=(--ctrkey "${ctrlkey}")
+			ARGS+=(--ctrlkey "${ctrlkey}")
 		fi
 
 		"${nvme_target_control}" add-ports \
