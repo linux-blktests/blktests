@@ -27,7 +27,7 @@ cat_url() {
 	local url=$1
 
 	if [[ $url =~ http ]]; then
-		curl --fail --location --silent "$url"
+		curl --fail --location --silent --show-error --retry 3 "$url"
 	else
 		cat "$url"
 	fi
@@ -35,12 +35,14 @@ cat_url() {
 
 get_conditions() {
 	local url_base=$1
-	local line
+	local line list
 	local -a conds
+
+	list=$(cat_url "${url_base}/list") || return 1
 
 	while read -r line; do
 		conds+=("$line")
-	done < <(cat_url "${url_base}/list")
+	done <<< "$list"
 	echo "${conds[@]}"
 }
 
@@ -54,10 +56,15 @@ dequote() {
 
 gen_config() {
 	local url=$1
-	local line check_args
+	local content line check_args
 	local devs
 	local -a test_devs
 	local -a check_args_arr
+
+	if ! content=$(cat_url "$url"); then
+		echo "run_ci: failed to get condition ${url}" >&2
+		exit 1
+	fi
 
 	check_args=${url##*/}
 
@@ -77,7 +84,7 @@ gen_config() {
 		else
 			echo "$line" >> config
 		fi
-	done < <(cat_url "$url")
+	done <<< "$content"
 
 	# shellcheck disable=SC2206
 	check_args_arr=(${check_args})
@@ -118,6 +125,13 @@ gen_config() {
 
 rm -f all_failures
 
-for condition in $(get_conditions "$COND_URL_BASE"); do
+if ! conditions=$(get_conditions "$COND_URL_BASE") || [[ -z $conditions ]]; then
+	echo "run_ci: failed to get test conditions from ${COND_URL_BASE}/list" >&2
+	exit 1
+fi
+
+for condition in $conditions; do
 	gen_config "$COND_URL_BASE"/"$condition"
 done
+
+exit 0
