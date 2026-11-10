@@ -1,0 +1,51 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Jesse Taube <jtaubepe@redhat.com>
+#
+# Regression test for reading memory contents beyond valid data when reading ANA log page.
+# It checks that the NVMe target zeroes the ANA log page response buffer so that stale kernel
+# memory is not leaked to the host.
+#
+
+. tests/nvme/rc
+
+DESCRIPTION="Check NVMe target ANA log page zeroing"
+QUICK=1
+
+requires() {
+	_nvme_requires
+	_have_loop
+	_require_nvme_trtype fc rdma tcp
+	_have_src_program nvme-ana-log
+}
+
+set_conditions() {
+	_set_nvme_trtype "$@"
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	local ctrl ret
+
+	_setup_nvmet
+
+	_nvmet_target_setup
+
+	_nvme_connect_subsys --port 0
+
+	ctrl=$(_find_nvme_dev "${def_subsysnqn}")
+
+	src/nvme-ana-log "/dev/${ctrl}" >>"$FULL" 2>&1
+	ret=$?
+	case $ret in
+	0) echo "ANA log page was zeroed" ;;
+	1) echo "ANA log page contained stale data" ;;
+	*) echo "ANA log page checker failed" ;;
+	esac
+
+	_nvme_disconnect_subsys
+	_nvmet_target_cleanup
+
+	echo "Test complete"
+}
