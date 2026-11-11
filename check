@@ -254,7 +254,7 @@ _read_last_test_run() {
 
 	local key value
 	while IFS=$'\t' read -r key value; do
-		if [[ ! $key =~ ^description|date|status|reason|exit_status$ ]]; then
+		if [[ ! $key =~ ^description|date|status|reason|exit_status|ignore_failure$ ]]; then
 			LAST_TEST_RUN["$key"]="$value"
 		fi
 	done <"$seqres"
@@ -284,10 +284,10 @@ _output_status() {
 	echo -n " ["
 	if [[ -t 1 ]]; then
 		case "$status" in
-		passed)
+		passed*)
 			tput setaf 2
 			;;
-		failed)
+		failed*)
 			tput setaf 1
 			;;
 		"not run")
@@ -352,6 +352,9 @@ _output_test_run() {
 	if [[ $status = pass || $status = fail ]]; then
 		status+="ed"
 	fi
+	if [[ $status = failed && -n ${TEST_RUN["ignore_failure"]} ]]; then
+		status+=" (ignored)"
+	fi
 	_output_test_name "$status"
 
 	{
@@ -366,7 +369,7 @@ _output_test_run() {
 
 	{
 	for key in "${!TEST_RUN[@]}"; do
-		if [[ $key =~ ^description|date|status|reason|exit_status$ ]]; then
+		if [[ $key =~ ^description|date|status|reason|exit_status|ignore_failure$ ]]; then
 			continue
 		fi
 		# [[ -v array[key] ]] was added in Bash 4.3. Do it this ugly
@@ -439,6 +442,34 @@ _cleanup() {
 	_exit_cgroup2
 }
 
+# Check whether a failure of the current test run is to be ignored. An entry
+# of IGNORE_FAILURE is a test group, a test name, or a test name followed by
+# ':' and a comma separated list of words which must all be present in
+# COND_DESC, e.g. "nvme/004:tr=rdma".
+_ignore_failure() {
+	local entry name cond
+	local -a conds descs
+
+	read -r -a descs <<< "${COND_DESC:-}"
+	for entry in "${!IGNORE_FAILURE[@]}"; do
+		name="${entry%%:*}"
+		if [[ $name != "$TEST_NAME" && $name != "${TEST_NAME%%/*}" ]]; then
+			continue
+		fi
+		if [[ $entry != *:* ]]; then
+			return 0
+		fi
+		IFS=, read -r -a conds <<< "${entry#*:}"
+		for cond in "${conds[@]}"; do
+			if [[ " ${descs[*]} " != *" ${cond} "* ]]; then
+				continue 2
+			fi
+		done
+		return 0
+	done
+	return 1
+}
+
 _call_test() {
 	local test_func="$1"
 	local seqres="${RESULTS_DIR}/${TEST_NAME}"
@@ -456,6 +487,9 @@ _call_test() {
 	declare -A TEST_RUN
 	TEST_RUN["date"]="${test_start%.*}"
 	TEST_RUN["description"]="${DESCRIPTION}"
+	if _ignore_failure; then
+		TEST_RUN["ignore_failure"]=1
+	fi
 
 	mkdir -p "$(dirname "$seqres")"
 	# Remove leftovers from last time.
@@ -489,12 +523,12 @@ _call_test() {
 			set -x
 		fi
 		{ time "$test_func" >"${seqres}.out" 2>&1; } 2>"${seqres}.runtime"
+		TEST_RUN["exit_status"]=$?
 		if ((CMD_TRACE)); then
 			set +x
 			unset BASH_XTRACEFD
 			exec 8>&-
 		fi
-		TEST_RUN["exit_status"]=$?
 		popd >/dev/null || return
 		TEST_RUN["runtime"]="$(cat "${seqres}.runtime")"
 		rm -f "${seqres}.runtime"
@@ -566,10 +600,15 @@ _call_test() {
 			}" "${seqres}.kmemleak"
 			;;
 		esac
+		if [[ -n ${TEST_RUN["ignore_failure"]} ]]; then
+			return 0
+		fi
 		return 1
-	else
-		return 0
+	elif [[ ${TEST_RUN["status"]} = pass && \
+		-n ${TEST_RUN["ignore_failure"]} ]]; then
+		echo "    passed, but listed in IGNORE_FAILURE"
 	fi
+	return 0
 }
 
 _test_dev_is_zoned() {
@@ -1174,6 +1213,12 @@ Test runs:
   -x, --exclude=TEST	 exclude a test (or test group) from the list of
 			 tests to run
 
+  -i, --ignore-failure=TEST
+			 run a test (or test group) but do not let its
+			 failure affect the exit status; TEST may be
+			 followed by ':' and conditions, e.g.
+			 nvme/004:tr=rdma
+
 Miscellaneous:
   -c, --config=FILE	 load configuration from FILE instead of the default
 			 (\"./config\"); if this option is used multiple times,
@@ -1195,7 +1240,7 @@ Miscellaneous:
 
 _check_dependencies
 
-if ! TEMP=$(getopt -o 'do:q::x:c:th' --long 'device-only,quick::,exclude:,output:,config:,cmd-trace,help' -n "$0" -- "$@"); then
+if ! TEMP=$(getopt -o 'do:q::x:i:c:th' --long 'device-only,quick::,exclude:,ignore-failure:,output:,config:,cmd-trace,help' -n "$0" -- "$@"); then
 	exit 1
 fi
 
@@ -1205,6 +1250,7 @@ unset TEMP
 LOADED_CONFIG=0
 CMD_TRACE=0
 OPTION_EXCLUDE=()
+OPTION_IGNORE_FAILURE=()
 while true; do
 	case "$1" in
 		'-d'|'--device-only')
@@ -1223,6 +1269,11 @@ while true; do
 		'-x'|'--exclude')
 			# shellcheck disable=SC2190
 			OPTION_EXCLUDE+=("$2")
+			shift 2
+			;;
+		'-i'|'--ignore-failure')
+			# shellcheck disable=SC2190
+			OPTION_IGNORE_FAILURE+=("$2")
 			shift 2
 			;;
 		'-c'|'--config')
@@ -1282,6 +1333,24 @@ for filter in "${TEMP_EXCLUDE[@]}"; do
 	EXCLUDE["$filter"]=1
 done
 unset OPTION_EXCLUDE TEMP_EXCLUDE
+
+if [[ "${IGNORE_FAILURE:-}" ]] && \
+	   ! declare -p IGNORE_FAILURE | grep -q '^declare -a'; then
+	# If IGNORE_FAILURE was not defined as an array, convert it to one.
+	# shellcheck disable=SC2128,SC2190,SC2206
+	IGNORE_FAILURE=($IGNORE_FAILURE)
+elif [[ ! "${IGNORE_FAILURE:-}" ]]; then
+	IGNORE_FAILURE=()
+fi
+# Convert the ignore failure list to an associative array. The lists from the
+# configuration file and command line options are merged.
+TEMP_IGNORE_FAILURE=("${IGNORE_FAILURE[@]}" "${OPTION_IGNORE_FAILURE[@]}")
+unset IGNORE_FAILURE
+declare -A IGNORE_FAILURE
+for filter in "${TEMP_IGNORE_FAILURE[@]}"; do
+	IGNORE_FAILURE["$filter"]=1
+done
+unset OPTION_IGNORE_FAILURE TEMP_IGNORE_FAILURE
 
 if [[ "${TEST_DEVS:-}" ]] && ! declare -p TEST_DEVS | grep -q '^declare -a'; then
 	# If TEST_DEVS was not defined as an array, convert it to one.

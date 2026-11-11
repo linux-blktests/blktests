@@ -80,6 +80,33 @@ in `EXCLUDE`.
 If `EXCLUDE` is defined as a normal variable instead of an array, it will be
 converted to an array by splitting on whitespace.
 
+### Ignoring Test Failures
+
+The `IGNORE_FAILURE` variable is an array of tests or test groups whose
+failures do not affect the exit status of `./check`. This corresponds to the
+`-i` command line option. Unlike `EXCLUDE`, the tests still run and their
+results are recorded as usual, so a known failure, e.g. a kernel bug which is
+not fixed yet, does not hide new failures of other tests.
+
+```sh
+IGNORE_FAILURE=(nvme/073 nvme/004:tr=rdma)
+```
+
+A test name may be followed by `:` and a comma separated list of conditions.
+The entry then only applies to the test runs whose condition description, as
+shown in parentheses after the test name, contains all of them. In the
+example above, `nvme/004` failures are ignored for the RDMA transport only.
+
+An ignored failure is shown as `[failed (ignored)]`, and the result file gets
+the `ignore_failure` key. When a test in `IGNORE_FAILURE` passes, `./check`
+reports it, so that the entry can be removed once the failure is fixed.
+
+Tests that crash or hang the system cannot be handled this way; use `EXCLUDE`
+for them.
+
+If `IGNORE_FAILURE` is defined as a normal variable instead of an array, it
+will be converted to an array by splitting on whitespace.
+
 ### Quick Runs and Test Timeouts
 
 Many tests can take a long time to run. By setting the `TIMEOUT` variable, you
