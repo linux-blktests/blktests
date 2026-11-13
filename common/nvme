@@ -578,7 +578,10 @@ _cleanup_nvmet() {
 	for dev in /sys/class/nvme/nvme*; do
 		dev="$(basename "$dev")"
 		transport="$(cat "/sys/class/nvme/${dev}/transport" 2>/dev/null)"
-		if [[ "$transport" == "${nvme_trtype}" ]]; then
+		subsysnqn="$(cat "/sys/class/nvme/${dev}/subsysnqn" 2>/dev/null)"
+		# Check matching transport type and subsysnqn is from nvmet
+		if [[ "$transport" == "${nvme_trtype}" ]] && \
+		   [[ -d "${NVMET_CFS}/subsystems/${subsysnqn}" ]]; then
 			# if udev auto connect is enabled for FC we get false positives
 			if [[ "$transport" != "fc" ]]; then
 				echo "WARNING: Test did not clean up ${nvme_trtype} device: ${dev}"
