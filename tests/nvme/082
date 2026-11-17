@@ -1,0 +1,90 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Ankit Gupta
+#
+# Test that a Write Zeroes request larger than a single NVMe Write Zeroes
+# command can describe zeroes the whole requested range. The command encodes
+# the number of logical blocks in a zero-based 16-bit field, so one command
+# covers at most 65536 logical blocks. When the controller reports neither
+# MDTS nor WZSL, as nvmet-tcp does by default, the host used to advertise an
+# unbounded write zeroes limit, truncate the block count when building the
+# command and complete the request successfully after zeroing only a prefix.
+#
+# Regression test for the patch "nvme: limit Write Zeroes to 65536 logical
+# blocks".
+
+. tests/nvme/rc
+
+DESCRIPTION="test write zeroes larger than 65536 logical blocks"
+QUICK=1
+
+requires() {
+	_nvme_requires
+	_have_loop
+	_require_nvme_trtype_is_fabrics
+}
+
+set_conditions() {
+	_set_combined_conditions _set_nvme_trtype _set_nvmet_blkdev_type "$@"
+}
+
+test_write_zeroes() {
+	local ns dev bs size len_mb
+
+	if ! ns=$(_find_nvme_ns "${def_subsys_uuid}"); then
+		echo "FAIL: failed to find the namespace"
+		return 1
+	fi
+	dev="/dev/${ns}"
+
+	if ! bs=$(blockdev --getss "${dev}") ||
+			! size=$(blockdev --getsize64 "${dev}"); then
+		echo "FAIL: failed to get the namespace block size and capacity"
+		return 1
+	fi
+
+	# 65536 logical blocks plus 1 MiB: 33 MiB with 512-byte logical blocks
+	# and 257 MiB with 4096-byte logical blocks.
+	len_mb=$((bs * 65536 / 1024 / 1024 + 1))
+	if ((len_mb * 1024 * 1024 > size)); then
+		SKIP_REASONS+=("namespace is smaller than ${len_mb} MiB")
+		return 1
+	fi
+
+	# Fill the range with non-zero data so that stale data is detectable.
+	if ! head --bytes="${len_mb}M" /dev/zero | tr '\0' '\377' |
+			dd of="${dev}" bs=1M iflag=fullblock oflag=direct \
+			status=none; then
+		echo "FAIL: failed to fill ${len_mb} MiB with a pattern"
+	fi
+
+	if ! blkdiscard --zeroout --offset 0 --length "${len_mb}M" "$dev"; then
+		echo "FAIL: blkdiscard -z failed"
+	fi
+
+	if ! dd if="${dev}" bs=1M count="${len_mb}" iflag=direct status=none |
+			cmp --silent --bytes "$((len_mb * 1024 * 1024))" \
+			    - /dev/zero; then
+		echo "FAIL: zeroed range still contains non-zero data"
+	fi
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	_setup_nvmet
+
+	_nvmet_target_setup
+
+	if _nvme_connect_subsys; then
+		test_write_zeroes
+	else
+		echo "FAIL: failed to connect to the subsystem"
+	fi
+
+	_nvme_disconnect_subsys
+
+	_nvmet_target_cleanup
+
+	echo "Test complete"
+}
