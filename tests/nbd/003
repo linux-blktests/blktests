@@ -13,6 +13,7 @@ QUICK=1
 requires() {
 	_have_nbd
 	_have_src_program mount_clear_sock
+	_have_program mkfs.ext4
 }
 
 test() {
