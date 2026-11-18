@@ -12,6 +12,10 @@ DESCRIPTION="test controller rescan under I/O load"
 TIMED=1
 : "${TIMEOUT:=60}"
 
+requires() {
+	_have_fio
+}
+
 get_sleep_time() {
 	local duration=$((RANDOM % 50 + 1))
 

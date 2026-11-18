@@ -15,6 +15,7 @@ requires() {
 	_nvme_requires
 	_have_loop
 	_have_module_param_value nvme_core multipath Y
+	_have_program xfs_io
 	_require_nvme_trtype_is_fabrics
 }
 
