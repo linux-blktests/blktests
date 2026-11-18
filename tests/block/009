@@ -14,6 +14,7 @@ DESCRIPTION="check page-cache coherency after BLKDISCARD"
 requires() {
 	_have_loadable_scsi_debug
 	_have_program xfs_io
+	_have_program hexdump
 }
 
 test() {

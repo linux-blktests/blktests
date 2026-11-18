@@ -11,6 +11,7 @@ TIMED=1
 
 requires() {
 	_have_program xfs_io
+	_have_program hexdump
 }
 
 test_device() {
