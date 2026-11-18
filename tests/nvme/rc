@@ -447,7 +447,7 @@ _check_zone_report() {
 		--cdw13=0x10000 2>&1 >/dev/null)
 	rc=$?
 	status=$(sed -n \
-		's/^NVMe status:.*(\(0x[[:xdigit:]][[:xdigit:]]*\)).*/\1/p' \
+		's/.*NVMe status:.*(\(0x[[:xdigit:]][[:xdigit:]]*\)).*/\1/p' \
 		<<<"$err")
 	printf '%s: exit=%d status=%s\n' "$desc" "$rc" "${status:-none}" \
 		>>"$FULL"
