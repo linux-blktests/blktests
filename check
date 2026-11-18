@@ -800,6 +800,7 @@ _check_and_call_test_device() {
 		if [[ $TEST_DEV == fallback ]]; then
 			if [[ -v SKIP_REASONS ]]; then
 				_output_notrun "$TEST_NAME"
+				_unload_modules
 				return 0
 			fi
 
@@ -807,6 +808,7 @@ _check_and_call_test_device() {
 			fb_dev_file="${OUTPUT}/${TEST_NAME/\//_}_fallback_dev"
 			if ! fallback_device > "$fb_dev_file"; then
 				_warning "$TEST_NAME: fallback_device call failure"
+				_unload_modules
 				return 0
 			fi
 			TEST_DEV=$(<"$fb_dev_file")
@@ -815,6 +817,7 @@ _check_and_call_test_device() {
 			if ! _find_sysfs_dirs "$TEST_DEV"; then
 				_warning "$TEST_NAME: could not find sysfs directory for ${TEST_DEV}"
 				cleanup_fallback_device
+				_unload_modules
 				return 0
 			fi
 			fallback=1
