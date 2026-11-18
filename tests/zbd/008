@@ -15,7 +15,9 @@ TIMED=1
 requires() {
 	_have_loadable_scsi_debug
 	_have_module_param scsi_debug zbc
+	_have_fio
 	_have_program xfs_io
+	_have_program hexdump
 }
 
 test() {
