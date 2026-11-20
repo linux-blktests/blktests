@@ -1,0 +1,28 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 SUSE LLC
+#
+# Test a test that fails with only one of its conditions. Use it to check
+# IGNORE_FAILURE with a condition, e.g. "./check -i meta/025:x=1 meta/025".
+
+. tests/meta/rc
+
+DESCRIPTION="fail with one of two conditions"
+
+set_conditions() {
+	local index=$1
+
+	if [[ -z $index ]]; then
+		echo 2
+		return
+	fi
+
+	meta_x_index=$index
+	COND_DESC="x=$index"
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+	echo "Test complete"
+	[[ $meta_x_index -eq 0 ]]
+}

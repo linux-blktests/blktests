@@ -42,6 +42,15 @@
 #
 # EXCLUDE=(loop block/001)
 
+# IGNORE_FAILURE
+#   Array of test names or test group names which run, but whose failures
+#   do not affect the exit status.  A test name may be followed by ':' and
+#   a comma separated list of conditions, e.g. nvme/004:tr=rdma.  May also
+#   be set as a whitespace-separated string instead of an array.
+#   Equivalent to the -i / --ignore-failure command line option.
+#
+# IGNORE_FAILURE=(nvme/073 nvme/004:tr=rdma)
+
 # QUICK_RUN
 #   When set to 1, only run tests that are marked as quick or that honour
 #   the TIMEOUT setting, and set a time limit for each such test.
