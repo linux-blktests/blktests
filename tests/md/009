@@ -1,0 +1,53 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0+
+# Copyright (C) 2026 Sebastian Chlad, SUSE
+#
+# Basic sanity test: create a RAID 10 (striped + mirrored) array on top of
+# four brd (ram disk) devices, verify it comes up active, write to it with
+# fio, then tear it down.
+
+. tests/md/rc
+. common/brd
+
+DESCRIPTION="create a RAID 10 array and verify it is active"
+QUICK=1
+
+requires() {
+	_have_driver raid10
+	_have_brd
+	_have_fio
+}
+
+test() {
+	echo "Running ${TEST_NAME}"
+
+	local mddev="/dev/md/blktests_md_${TEST_NAME##*/}"
+
+	if ! _init_brd rd_size=524288 rd_nr=4; then
+		echo "failed to init brd devices"
+		return 1
+	fi
+
+	mdadm --create --run --quiet "$mddev" \
+		--level=10 --raid-devices=4 --assume-clean \
+		/dev/ram0 /dev/ram1 /dev/ram2 /dev/ram3
+
+	udevadm settle
+
+	if ! _md_is_level "$mddev" raid10; then
+		echo "array is not raid10"
+		_md_detail "$mddev"
+	fi
+
+	if ! _md_is_healthy "$mddev"; then
+		echo "array did not reach a healthy state"
+		_md_detail "$mddev"
+	fi
+
+	_run_fio_verify_io --filename="$mddev" --size=64M
+
+	mdadm --quiet --stop "$mddev" >/dev/null 2>&1
+	_cleanup_brd
+
+	echo "Test complete"
+}
